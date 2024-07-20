@@ -107,7 +107,6 @@ char *serialize_array(const char **arr, int count) {
   // serialize
   char *current = serialized;
 
-  int count_str_len = snprintf(NULL, 0, "%d", count);
   current += sprintf(current, "*%d\r\n", count);
   for (int i = 0; i < count; i++) {
     const char *str = arr[i];
