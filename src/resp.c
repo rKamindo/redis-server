@@ -111,7 +111,6 @@ char *serialize_array(const char **arr, int count) {
   for (int i = 0; i < count; i++) {
     const char *str = arr[i];
     if (str == NULL) {
-      printf("NULL STR -1!");
       memcpy(current, "$-1\r\n", 5);
       current += 5;
     } else {
