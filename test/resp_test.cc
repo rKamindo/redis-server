@@ -56,3 +56,16 @@ TEST(SerializeTest, HandleArrayWithNullElements) {
   EXPECT_STREQ(result, "*3\r\n$5\r\nhello\r\n$-1\r\n$5\r\nworld\r\n");
   free(result);
 }
+
+TEST(DeserializeCommandTest, ValidCommand) {
+  const char* input = "*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n";
+  int count;
+  char** result = deserialize_command(input, &count);
+
+  ASSERT_NE(result, NULL);
+  EXPECT_EQ(count, 2);
+  EXPECT_STREQ(result[0], "echo");
+  EXPECT_STREQ(result[1], "hello world");
+
+  free_command(result, count);
+}

@@ -125,3 +125,68 @@ char *serialize_array(const char **arr, int count) {
   *current = '\0';  // null terminate the string
   return serialized;
 }
+
+typedef struct {
+  char **strings;
+  int count;
+} Command;
+
+// "*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n”
+// a command is an array of bulk strings
+char **deserialize_command(const char *input, int *count) {
+  if (input[0] != '*') {
+    *count = 0;
+    return NULL;  // not an array, invalid command
+  }
+
+  // parse the number of elements in the array
+  *count = atoi(input + 1);
+  char **result = malloc(*count * sizeof(char *));
+  if (result == NULL) {
+    return NULL;
+  }
+
+  const char *current = strchr(input, '\n') + 1;
+  for (int i = 0; i < *count; i++) {
+    if (current[0] != '$') {
+      // expected a bulk string, but did not find one
+      for (int j = 0; j < i; j++) free(result[j]);
+      free(result);
+      *count = 0;
+      return NULL;
+    }
+
+    // parse the length of the bulk string
+    int len = atoi(current + 1);
+    current = strchr(current, '\n') + 1;
+
+    if (len == -1) {
+      // this is a null bulk string
+      result[i] = NULL;
+    } else {
+      // allocate memory for this string and copy it
+      result[i] = malloc(len + 1);
+      if (result[i] == NULL) {
+        for (int j = 0; j < i; j++) free(result[j]);
+        free(result);
+        *count = 0;
+        return NULL;
+      }
+      strncpy(result[i], current, len);
+      result[i][len] = '\0';  // null terminate
+    }
+
+    // move on to the next element
+    // Move to the next element
+    current = strchr(current, '\n') + 1;
+  }
+
+  return result;
+}
+
+void free_command(char **command, int count) {
+  for (int i = 0; i < count; i++) {
+    free(command[i]);
+  }
+  free(command);
+}
