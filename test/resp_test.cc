@@ -62,10 +62,23 @@ TEST(DeserializeCommandTest, ValidCommand) {
   int count;
   char** result = deserialize_command(input, &count);
 
-  ASSERT_NE(result, NULL);
+  ASSERT_NE(result, nullptr);
   EXPECT_EQ(count, 2);
   EXPECT_STREQ(result[0], "echo");
   EXPECT_STREQ(result[1], "hello world");
+
+  free_command(result, count);
+}
+
+TEST(DeserializeCommandTest, NullBulkString) {
+  const char* input = "*3\r\n$3\r\nget\r\n$-1\r\n$4\r\nName\r\n";
+  int count;
+  char** result = deserialize_command(input, &count);
+
+  ASSERT_NE(result, nullptr);
+  EXPECT_STREQ(result[0], "get");
+  EXPECT_EQ(result[1], nullptr);
+  EXPECT_STREQ(result[2], "Name");
 
   free_command(result, count);
 }
