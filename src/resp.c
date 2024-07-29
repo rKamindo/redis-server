@@ -141,7 +141,7 @@ char **deserialize_command(const char *input, int *count) {
     return NULL;
   }
 
-  const char *current = strchr(input, '\n') + 1;
+  const char *current = input + 4;
   for (int i = 0; i < *count; i++) {
     if (current[0] != '$') {
       // expected a bulk string, but did not find one
