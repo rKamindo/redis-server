@@ -170,8 +170,7 @@ char **deserialize_command(const char *input, int *count) {
       strncpy(result[i], current, len);
       result[i][len] = '\0';  // null terminate
 
-      // move on to the next element
-      current = strchr(current, '\n') + 1;
+      current += len + 2;  // skip past the string and the "\r\n"
     }
   }
 
