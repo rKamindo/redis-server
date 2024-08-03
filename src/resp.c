@@ -59,7 +59,7 @@ char *serialize_integer(const int val) {
 
 char *serialize_bulk_string(const char *str) {
   if (str == NULL) {
-    return _strdup("$-1\r\n");  // null representation of bulk string
+    return strdup("$-1\r\n");  // null representation of bulk string
   }
 
   size_t str_len = strlen(str);
@@ -82,7 +82,7 @@ char *serialize_bulk_string(const char *str) {
 
 char *serialize_array(const char **arr, int count) {
   if (arr == NULL) {
-    return _strdup("*-1\r\n");
+    return strdup("*-1\r\n");
   }
 
   // total length for the serialized array

@@ -1,6 +1,9 @@
 # ignore build directory
 /build/
 
+# ignore vscode directory
+.vscode/*
+
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
