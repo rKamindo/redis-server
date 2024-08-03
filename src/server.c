@@ -67,6 +67,14 @@ int main() {
           } else {
             printf("Sent: %s\n", response);
           }
+        } else if (strcmp(parsed_command[0], "ECHO") == 0 && count > 1) {
+          const char *response = serialize_bulk_string(parsed_command[1]);
+          ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
+          if (bytes_sent < 0) {
+            perror("send failed");
+          } else {
+            printf("Sent: %s\n", response);
+          }
         }
         // free the deserialized command
         free_command(parsed_command, count);
