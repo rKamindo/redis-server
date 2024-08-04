@@ -65,6 +65,18 @@ void cleanup_hash(khash_t(redis_hash) * h) {
   kh_destroy(redis_hash, h);
 }
 
+void send_response(int ConnectFD, const char *response) {
+  if (response) {
+    ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
+    if (bytes_sent < 0) {
+      perror("send failed");
+    } else {
+      printf("Sent: %s\n", response);
+    }
+    free((void *)response);
+  }
+}
+
 int start_server() {
   // initialize the hash table
   khash_t(redis_hash) *h = kh_init(redis_hash);
@@ -118,40 +130,26 @@ int start_server() {
       int count;
       char **parsed_command = deserialize_command(buffer, &count);
       if (parsed_command && count > 0) {
+        const char *response;
         // check if the received message is ping
         if (strcmp(parsed_command[0], "PING") == 0) {
-          const char *response = serialize_simple_string("PONG");
-          ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
-          if (bytes_sent < 0) {
-            perror("send failed");
-          } else {
-            printf("Sent: %s\n", response);
-          }
+          response = serialize_simple_string("PONG");
         } else if (strcmp(parsed_command[0], "ECHO") == 0 && count > 1) {
-          const char *response = serialize_bulk_string(parsed_command[1]);
-          ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
-          if (bytes_sent < 0) {
-            perror("send failed");
-          } else {
-            printf("Sent: %s\n", response);
-          }
+          response = serialize_bulk_string(parsed_command[1]);
         } else if (strcmp(parsed_command[0], "SET") == 0 && count > 2) {
           set_value(h, parsed_command[1], parsed_command[2], TYPE_STRING);
-          const char *response = serialize_simple_string("OK");
-          ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
-          if (bytes_sent < 0) {
-            perror("send failed");
-          } else {
-            printf("Sent: %s\n", response);
-          }
+          response = serialize_simple_string("OK");
         } else if (strcmp(parsed_command[0], "GET") == 0 && count > 1) {
           RedisValue *redis_value = get_value(h, parsed_command[1]);
-          const char *response;
           if (redis_value == NULL) {
             response = serialize_bulk_string(NULL);
           } else {
-            const char *response = serialize_bulk_string(redis_value->data.str);
+            response = serialize_bulk_string(redis_value->data.str);
           }
+        } else {
+          response = serialize_error("ERR unknown command");
+        }
+        if (response) {
           ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
           if (bytes_sent < 0) {
             perror("send failed");

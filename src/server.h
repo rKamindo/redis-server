@@ -20,6 +20,7 @@ void set_value(khash_t(redis_hash) * h, const char *key, const void *value,
                ValueType type);
 RedisValue *get_value(khash_t(redis_hash) * h, const char *key);
 void cleanup_hash(khash_t(redis_hash) * h);
+void send_response(int ConnectFD, const char *respone);
 int start_server();
 
 #ifdef __cplusplus
