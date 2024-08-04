@@ -46,3 +46,23 @@ TEST_F(ServerTest, OverwriteExistingStringValue) {
   EXPECT_EQ(kh_value(h, k).type, TYPE_STRING);
   EXPECT_STREQ(kh_value(h, k).data.str, new_value);
 }
+
+TEST_F(ServerTest, GetValueString) {
+  const char* key = "test_key";
+  const char* value = "test_value";
+  set_value(h, key, value, TYPE_STRING);
+
+  // retrieve value
+  RedisValue* retrieved_value = get_value(h, key);
+  ASSERT_NE(retrieved_value, nullptr);
+  EXPECT_EQ(retrieved_value->type, TYPE_STRING);
+  EXPECT_STREQ(retrieved_value->data.str, value);
+}
+
+TEST_F(ServerTest, GetValueKeyNotFound) {
+  const char* value = "test_value";
+
+  // retrieve value
+  RedisValue* retrieved_value = get_value(h, "test_key");
+  ASSERT_EQ(retrieved_value, nullptr);
+}

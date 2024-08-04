@@ -144,6 +144,20 @@ int start_server() {
           } else {
             printf("Sent: %s\n", response);
           }
+        } else if (strcmp(parsed_command[0], "GET") == 0 && count > 1) {
+          RedisValue *redis_value = get_value(h, parsed_command[1]);
+          const char *response;
+          if (redis_value == NULL) {
+            response = serialize_bulk_string(NULL);
+          } else {
+            const char *response = serialize_bulk_string(redis_value->data.str);
+          }
+          ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
+          if (bytes_sent < 0) {
+            perror("send failed");
+          } else {
+            printf("Sent: %s\n", response);
+          }
         }
         // free the deserialized command
         free_command(parsed_command, count);
@@ -156,9 +170,9 @@ int start_server() {
       printf("read failed");
     }
 
-    if (shutdown(ConnectFD, SHUT_RDWR) == -1) {
-      perror("shutdown failed");
-    }
+    // if (shutdown(ConnectFD, SHUT_RDWR) == -1) {
+    //   perror("shutdown failed");
+    // }
     close(ConnectFD);
   }
 
