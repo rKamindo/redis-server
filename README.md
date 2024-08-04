@@ -44,7 +44,7 @@ OK
 Randy
 127.0.0.1:6379> SET Count 1
 OK
-127.0.0.1:6379> Get Count
+127.0.0.1:6379> GET Count
 1
 ```
 
