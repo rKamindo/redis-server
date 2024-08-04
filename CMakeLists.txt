@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 project(redis)
 
 add_executable(redis_lite
+    src/main.c
     src/resp.c
     src/server.c
 )
