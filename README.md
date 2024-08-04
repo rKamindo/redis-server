@@ -4,7 +4,7 @@ This project is a lightweight Redis server implementation in C, created as part 
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
-- Support for basic Redis commands (PING, ECHO)
+- Support for basic Redis commands (PING, ECHO, SET (no expiry options), GET)
 - GoogleTest for unit testing
 - Cmake for building
 
@@ -34,20 +34,19 @@ Once the server is running, you can use `redis-cli` to test various commands.
 Start the redis-cli, and connect to the server.
 ```bash
 redis-cli
-```
-
-Test the PING command
-```bash
 127.0.0.1:6379> PING
 PONG
-```
-Test the ECHO command
-```bash
 127.0.0.1:6379> ECHO "Hello World"
-"Hello World
+"Hello World"
+127.0.0.1:6379> SET Name Randy
+OK
+127.0.0.1:6379> GET Name
+Randy
+127.0.0.1:6379> SET Count 1
+OK
+127.0.0.1:6379> Get Count
+1
 ```
-
-
 
 ## Running Tests
 
