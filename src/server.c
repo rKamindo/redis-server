@@ -1,6 +1,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,7 +71,10 @@ void cleanup_hash(khash_t(redis_hash) * h) {
   kh_destroy(redis_hash, h);
 }
 
-void send_response(int ConnectFD, const char *response) {
+/**
+ * Seconds a response to the client and optionally frees the response memory.
+ */
+void add_reply(int ConnectFD, const char *response, int free_response) {
   if (response) {
     ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
     if (bytes_sent < 0) {
@@ -78,11 +82,78 @@ void send_response(int ConnectFD, const char *response) {
     } else {
       printf("Sent: %s\n", response);
     }
-    free((void *)response);
+    if (free_response) {
+      free((void *)response);
+    }
   }
 }
 
+void handle_echo(int ConnectFD, char *response) {
+  add_reply(ConnectFD, response, 1);
+}
+
+void handle_set(int ConnectFD, char *key, char *value,
+                khash_t(redis_hash) * h) {
+  set_value(h, key, value, TYPE_STRING);
+  add_reply(ConnectFD, "+OK\r\n", 0);
+}
+
+void handle_get(int ConnectFD, char *key, khash_t(redis_hash) * h) {
+  RedisValue *redis_value = get_value(h, key);
+  if (redis_value == NULL) {
+    add_reply(ConnectFD, "$-1\r\n", 0);
+  } else {
+    add_reply(ConnectFD, serialize_bulk_string(redis_value->data.str), 1);
+  }
+}
+
+typedef enum { CMD_PING, CMD_ECHO, CMD_SET, CMD_GET, CMD_UNKNOWN } CommandType;
+
+CommandType get_command_type(char *command) {
+  if (strcmp(command, "PING") == 0)
+    return CMD_PING;
+  else if (strcmp(command, "ECHO") == 0)
+    return CMD_ECHO;
+  else if (strcmp(command, "SET") == 0)
+    return CMD_SET;
+  else if (strcmp(command, "GET") == 0)
+    return CMD_GET;
+  else
+    return CMD_UNKNOWN;
+}
+
+void handle_command(int ConnectFD, char **parsed_command, int count,
+                    khash_t(redis_hash) * h) {
+  CommandType command_type = get_command_type(parsed_command[0]);
+  switch (command_type) {
+    case CMD_ECHO:
+      if (count > 1) handle_echo(ConnectFD, parsed_command[1]);
+      break;
+    case CMD_SET:
+      if (count > 2) {
+        char *key = parsed_command[1];
+        char *value = parsed_command[2];
+        handle_set(ConnectFD, key, value, h);
+      }
+      break;
+    case CMD_GET:
+      if (count > 1) handle_get(ConnectFD, parsed_command[1], h);
+      break;
+    default:
+      add_reply(ConnectFD, serialize_error("ERR unknown command"), 1);
+      free(parsed_command);
+      break;
+  }
+}
+
+volatile sig_atomic_t stop_server = 0;
+
+void sigint_handler(int sig) { stop_server = 1; }
+
 int start_server() {
+  // register the signal handler
+  signal(SIGINT, sigint_handler);
+
   // initialize the hash table
   khash_t(redis_hash) *h = kh_init(redis_hash);
 
@@ -169,40 +240,15 @@ int start_server() {
         if (bytes_received > 0) {
           buffer[bytes_received] = '\0';  // null terminate the received string
           printf("Received: %s\n", buffer);
-
-          // Check for PING command
-          if (strcmp(buffer, "PING\r\n") == 0 ||
-              strcmp(buffer, "*1\r\n$4\r\nPING\r\n") == 0) {
-            const char *response = serialize_simple_string("PONG");
-            send_response(events[i].data.fd, response);
+          if (strncmp(buffer, "PING", 4) == 0) {
+            add_reply(events[i].data.fd, "+PONG\r\n", 0);
           } else {
-            // deserialize received RESP data
             int count;
             char **parsed_command = deserialize_command(buffer, &count);
             if (parsed_command && count > 0) {
-              const char *response;
-              if (strcmp(parsed_command[0], "ECHO") == 0 && count > 1) {
-                response = serialize_bulk_string(parsed_command[1]);
-              } else if (strcmp(parsed_command[0], "SET") == 0 && count > 2) {
-                set_value(h, parsed_command[1], parsed_command[2], TYPE_STRING);
-                response = serialize_simple_string("OK");
-              } else if (strcmp(parsed_command[0], "GET") == 0 && count > 1) {
-                RedisValue *redis_value = get_value(h, parsed_command[1]);
-                if (redis_value == NULL) {
-                  response = serialize_bulk_string(NULL);
-                } else {
-                  response = serialize_bulk_string(redis_value->data.str);
-                }
-              } else {
-                response = serialize_error("ERR unknown command");
-              }
-              if (response) {
-                send_response(events[i].data.fd, response);
-              }
-              // free the deserialized command
-              free_command(parsed_command, count);
-            } else {
-              printf("Invalid command received\n");
+              printf("%s", parsed_command[0]);
+              handle_command(events[i].data.fd, parsed_command, count,
+                             h);  // handle the command
             }
           }
         } else if (bytes_received == 0) {
@@ -216,8 +262,10 @@ int start_server() {
         }
       }
     }
+    if (stop_server) {
+      break;
+    }
   }
-
   close(epfd);
   close(SocketFD);
   cleanup_hash(h);
