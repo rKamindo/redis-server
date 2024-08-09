@@ -129,6 +129,16 @@ char *serialize_array(const char **arr, int count) {
 // "*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n”
 // a command is an array of bulk strings
 char **deserialize_command(const char *input, int *count) {
+  if (strncmp(input, "PING", 4) == 0) {
+    *count = 1;
+    char **result = (char **)malloc(sizeof(char *));
+    if (result == NULL) {
+      return NULL;
+    }
+    result[0] = strdup("PING");
+    return result;
+  }
+
   if (input == NULL || input[0] != '*') {
     *count = 0;
     return NULL; // not an array, invalid command
