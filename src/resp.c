@@ -19,7 +19,7 @@ char *serialize_simple_string(const char *str) {
   // terminator
   char *serialized = (char *)malloc(len + 4);
   if (serialized == NULL) {
-    return NULL;  // memory allocation failed
+    return NULL; // memory allocation failed
   }
 
   // format the serialized string
@@ -59,7 +59,7 @@ char *serialize_integer(const int val) {
 
 char *serialize_bulk_string(const char *str) {
   if (str == NULL) {
-    return strdup("$-1\r\n");  // null representation of bulk string
+    return strdup("$-1\r\n"); // null representation of bulk string
   }
 
   size_t str_len = strlen(str);
@@ -90,7 +90,7 @@ char *serialize_array(const char **arr, int count) {
   for (int i = 0; i < count; i++) {
     const char *str = arr[i];
     if (str == NULL) {
-      total_len += 5;  // for "$-1\r\n"
+      total_len += 5; // for "$-1\r\n"
     } else {
       size_t str_len = strlen(str);
       // 1 for "$", length of str_len, 2 for "\r\n", str_len, 2 for last "\r\n"
@@ -99,7 +99,7 @@ char *serialize_array(const char **arr, int count) {
   }
 
   // allocate memory for the serialized array
-  char *serialized = (char *)malloc(total_len + 1);  // + 1 for null terminator
+  char *serialized = (char *)malloc(total_len + 1); // + 1 for null terminator
   if (serialized == NULL) {
     return NULL;
   }
@@ -122,16 +122,26 @@ char *serialize_array(const char **arr, int count) {
     }
   }
 
-  *current = '\0';  // null terminate the string
+  *current = '\0'; // null terminate the string
   return serialized;
 }
 
 // "*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n”
 // a command is an array of bulk strings
 char **deserialize_command(const char *input, int *count) {
+  if (strncmp(input, "PING", 4) == 0) {
+    *count = 1;
+    char **result = (char **)malloc(sizeof(char *));
+    if (result == NULL) {
+      return NULL;
+    }
+    result[0] = strdup("PING");
+    return result;
+  }
+
   if (input == NULL || input[0] != '*') {
     *count = 0;
-    return NULL;  // not an array, invalid command
+    return NULL; // not an array, invalid command
   }
 
   // parse the number of elements in the array
@@ -145,7 +155,8 @@ char **deserialize_command(const char *input, int *count) {
   for (int i = 0; i < *count; i++) {
     if (current[0] != '$') {
       // expected a bulk string, but did not find one
-      for (int j = 0; j < i; j++) free(result[j]);
+      for (int j = 0; j < i; j++)
+        free(result[j]);
       free(result);
       *count = 0;
       return NULL;
@@ -162,15 +173,16 @@ char **deserialize_command(const char *input, int *count) {
       // allocate memory for this string and copy it
       result[i] = (char *)malloc(len + 1);
       if (result[i] == NULL) {
-        for (int j = 0; j < i; j++) free(result[j]);
+        for (int j = 0; j < i; j++)
+          free(result[j]);
         free(result);
         *count = 0;
         return NULL;
       }
       strncpy(result[i], current, len);
-      result[i][len] = '\0';  // null terminate
+      result[i][len] = '\0'; // null terminate
 
-      current += len + 2;  // skip past the string and the "\r\n"
+      current += len + 2; // skip past the string and the "\r\n"
     }
   }
 
