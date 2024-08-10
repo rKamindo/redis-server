@@ -27,15 +27,15 @@ typedef struct {
 } RedisValue;
 
 KHASH_MAP_INIT_STR(redis_hash, RedisValue);
+khash_t(redis_hash) * h;
 
-void set_value(khash_t(redis_hash) * h, const char *key, const void *value,
-               ValueType type) {
+void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type) {
   int ret;
   // attempt to put the key into the hash table
   khiter_t k = kh_put(redis_hash, h, key, &ret);
-  if (ret == 1) {  // key not present
+  if (ret == 1) { // key not present
     kh_key(h, k) = strdup(key);
-  } else {  // key present, we're updating an existing entry
+  } else { // key present, we're updating an existing entry
     // if the existing value is a string, free it
     if (kh_value(h, k).type == TYPE_STRING) {
       free(kh_value(h, k).data.str);
@@ -56,7 +56,7 @@ RedisValue *get_value(khash_t(redis_hash) * h, const char *key) {
   if (k != kh_end(h)) {
     return &kh_value(h, k);
   }
-  return NULL;  // key not found
+  return NULL; // key not found
 }
 
 void cleanup_hash(khash_t(redis_hash) * h) {
@@ -72,7 +72,7 @@ void cleanup_hash(khash_t(redis_hash) * h) {
 }
 
 /**
- * Seconds a response to the client and optionally frees the response memory.
+ * Sends a response to the client and optionally frees the response memory.
  */
 void add_reply(int ConnectFD, const char *response, int free_response) {
   if (response) {
@@ -89,16 +89,15 @@ void add_reply(int ConnectFD, const char *response, int free_response) {
 }
 
 void handle_echo(int ConnectFD, char *response) {
-  add_reply(ConnectFD, response, 1);
+  add_reply(ConnectFD, serialize_bulk_string(response), 1);
 }
 
-void handle_set(int ConnectFD, char *key, char *value,
-                khash_t(redis_hash) * h) {
+void handle_set(int ConnectFD, char *key, char *value) {
   set_value(h, key, value, TYPE_STRING);
   add_reply(ConnectFD, "+OK\r\n", 0);
 }
 
-void handle_get(int ConnectFD, char *key, khash_t(redis_hash) * h) {
+void handle_get(int ConnectFD, char *key) {
   RedisValue *redis_value = get_value(h, key);
   if (redis_value == NULL) {
     add_reply(ConnectFD, "$-1\r\n", 0);
@@ -122,28 +121,30 @@ CommandType get_command_type(char *command) {
     return CMD_UNKNOWN;
 }
 
-void handle_command(int ConnectFD, char **parsed_command, int count,
-                    khash_t(redis_hash) * h) {
+void handle_command(int ConnectFD, char **parsed_command, int count) {
   CommandType command_type = get_command_type(parsed_command[0]);
   switch (command_type) {
-    case CMD_ECHO:
-      if (count > 1) handle_echo(ConnectFD, parsed_command[1]);
-      break;
-    case CMD_SET:
-      if (count > 2) {
-        char *key = parsed_command[1];
-        char *value = parsed_command[2];
-        handle_set(ConnectFD, key, value, h);
-      }
-      break;
-    case CMD_GET:
-      if (count > 1) handle_get(ConnectFD, parsed_command[1], h);
-      break;
-    default:
-      add_reply(ConnectFD, serialize_error("ERR unknown command"), 1);
-      free(parsed_command);
-      break;
+  case CMD_PING:
+    add_reply(ConnectFD, "+PONG\r\n", 0);
+    break;
+  case CMD_ECHO:
+    if (count > 1) handle_echo(ConnectFD, parsed_command[1]);
+    break;
+  case CMD_SET:
+    if (count > 2) {
+      char *key = parsed_command[1];
+      char *value = parsed_command[2];
+      handle_set(ConnectFD, key, value);
+    }
+    break;
+  case CMD_GET:
+    if (count > 1) handle_get(ConnectFD, parsed_command[1]);
+    break;
+  default:
+    add_reply(ConnectFD, serialize_error("ERR unknown command"), 1);
+    break;
   }
+  free_command(parsed_command, count);
 }
 
 volatile sig_atomic_t stop_server = 0;
@@ -155,7 +156,7 @@ int start_server() {
   signal(SIGINT, sigint_handler);
 
   // initialize the hash table
-  khash_t(redis_hash) *h = kh_init(redis_hash);
+  h = kh_init(redis_hash);
 
   struct sockaddr_in sa;
   int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -191,7 +192,7 @@ int start_server() {
   }
 
   struct epoll_event event;
-  event.events = EPOLLIN;  // EPOLLIN is the flag for read events
+  event.events = EPOLLIN; // EPOLLIN is the flag for read events
   event.data.fd = SocketFD;
 
   if (epoll_ctl(epfd, EPOLL_CTL_ADD, SocketFD, &event) == 1) {
@@ -211,8 +212,7 @@ int start_server() {
 
     // iterate through the events
     for (int i = 0; i < num_events; i++) {
-      if (events[i].data.fd ==
-          SocketFD) {  // server socket is ready, new connection
+      if (events[i].data.fd == SocketFD) { // server socket is ready, new connection
         int ConnectFD = accept(SocketFD, NULL, NULL);
         if (ConnectFD == -1) {
           perror("accept failed");
@@ -221,8 +221,7 @@ int start_server() {
         }
 
         int optval = 1;
-        setsockopt(ConnectFD, IPPROTO_TCP, TCP_NODELAY, &optval,
-                   sizeof(optval));
+        setsockopt(ConnectFD, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
         event.events = EPOLLIN;
         event.data.fd = ConnectFD;
@@ -238,18 +237,12 @@ int start_server() {
         // read from the client
         bytes_received = recv(events[i].data.fd, buffer, BUFFER_SIZE - 1, 0);
         if (bytes_received > 0) {
-          buffer[bytes_received] = '\0';  // null terminate the received string
+          buffer[bytes_received] = '\0'; // null terminate the received string
           printf("Received: %s\n", buffer);
-          if (strncmp(buffer, "PING", 4) == 0) {
-            add_reply(events[i].data.fd, "+PONG\r\n", 0);
-          } else {
-            int count;
-            char **parsed_command = deserialize_command(buffer, &count);
-            if (parsed_command && count > 0) {
-              printf("%s", parsed_command[0]);
-              handle_command(events[i].data.fd, parsed_command, count,
-                             h);  // handle the command
-            }
+          int count;
+          char **parsed_command = deserialize_command(buffer, &count);
+          if (parsed_command && count > 0) {
+            handle_command(events[i].data.fd, parsed_command, count); // handle the command
           }
         } else if (bytes_received == 0) {
           printf("Client disconnected\n");
