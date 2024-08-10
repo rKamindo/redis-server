@@ -26,7 +26,7 @@ typedef struct {
   } data;
 } RedisValue;
 
-KHASH_MAP_INIT_STR(redis_hash, RedisValue);
+KHASH_MAP_INIT_STR(redis_hash, RedisValue *);
 khash_t(redis_hash) * h;
 
 void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type) {
@@ -37,24 +37,28 @@ void set_value(khash_t(redis_hash) * h, const char *key, const void *value, Valu
     kh_key(h, k) = strdup(key);
   } else { // key present, we're updating an existing entry
     // if the existing value is a string, free it
-    if (kh_value(h, k).type == TYPE_STRING) {
-      free(kh_value(h, k).data.str);
+    if (kh_value(h, k)->type == TYPE_STRING) {
+      free(kh_value(h, k)->data.str);
+      free(kh_value(h, k));
     }
   }
 
+  RedisValue *redis_value = malloc(sizeof(RedisValue));
+
   // set the type of the new value
-  kh_value(h, k).type = type;
+  redis_value->type = type;
+  kh_value(h, k) = redis_value;
 
   // handle the value based on its type
   if (type == TYPE_STRING) {
-    kh_value(h, k).data.str = strdup((char *)value);
+    kh_value(h, k)->data.str = strdup((char *)value);
   }
 }
 
 RedisValue *get_value(khash_t(redis_hash) * h, const char *key) {
   khiter_t k = kh_get(redis_hash, h, key);
   if (k != kh_end(h)) {
-    return &kh_value(h, k);
+    return kh_value(h, k);
   }
   return NULL; // key not found
 }
@@ -63,8 +67,8 @@ void cleanup_hash(khash_t(redis_hash) * h) {
   for (khiter_t k = kh_begin(h); k != kh_end(h); k++) {
     if (kh_exist(h, k)) {
       free((char *)kh_key(h, k));
-      if (kh_value(h, k).type == TYPE_STRING) {
-        free(kh_value(h, k).data.str);
+      if (kh_value(h, k)->type == TYPE_STRING) {
+        free(kh_value(h, k)->data.str);
       }
     }
   }
