@@ -66,10 +66,12 @@ RedisValue *get_value(khash_t(redis_hash) * h, const char *key) {
 void cleanup_hash(khash_t(redis_hash) * h) {
   for (khiter_t k = kh_begin(h); k != kh_end(h); k++) {
     if (kh_exist(h, k)) {
-      free((char *)kh_key(h, k));
-      if (kh_value(h, k)->type == TYPE_STRING) {
-        free(kh_value(h, k)->data.str);
+      free((char *)kh_key(h, k)); // free the key
+      RedisValue *rv = kh_value(h, k);
+      if (rv->type == TYPE_STRING) {
+        free(rv->data.str); // free the string data
       }
+      free(rv);
     }
   }
   kh_destroy(redis_hash, h);
