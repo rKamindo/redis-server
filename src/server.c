@@ -10,21 +10,18 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "client.h"
+#include "command_handler.h"
+#include "handler.h"
 #include "khash.h"
 #include "resp.h"
+#include "ring_buffer.h"
+#include "server.h"
+#include <errno.h>
 
 #define DEFAULT_PORT 6379
 #define BUFFER_SIZE 1024
-#define MAX_EVENTS 50
-
-typedef enum { TYPE_STRING } ValueType;
-
-typedef struct {
-  ValueType type;
-  union {
-    char *str;
-  } data;
-} RedisValue;
+#define MAX_EVENTS 10000
 
 KHASH_MAP_INIT_STR(redis_hash, RedisValue *);
 khash_t(redis_hash) * h;
@@ -77,38 +74,51 @@ void cleanup_hash(khash_t(redis_hash) * h) {
   kh_destroy(redis_hash, h);
 }
 
-/**
- * Sends a response to the client and optionally frees the response memory.
- */
-void add_reply(int ConnectFD, const char *response, int free_response) {
-  if (response) {
-    ssize_t bytes_sent = send(ConnectFD, response, strlen(response), 0);
-    if (bytes_sent < 0) {
-      perror("send failed");
-    } else {
-      printf("Sent: %s\n", response);
-    }
-    if (free_response) {
-      free((void *)response);
-    }
+void add_simple_string_reply(Client *client, const char *str) {
+  write_begin_simple_string(client->output_buffer);
+  write_chars(client->output_buffer, str);
+  write_end_simple_string(client->output_buffer);
+}
+
+void add_bulk_string_reply(Client *client, const char *str) {
+  // Assuming you have a function that calculates the length of the string
+  int64_t len = strlen(str);
+  write_begin_bulk_string(client->output_buffer, len);
+  write_chars(client->output_buffer, str);
+  write_end_bulk_string(client->output_buffer);
+}
+
+void add_null_reply(Client *client) {
+  write_begin_bulk_string(client->output_buffer, -1); // Indicate that this is a null bulk string
+  // No actual data to write since it's null
+  write_end_bulk_string(client->output_buffer);
+}
+
+void add_error_reply(Client *client, const char *str) {
+  write_begin_error(client->output_buffer);
+  write_chars(client->output_buffer, str);
+  write_end_error(client->output_buffer);
+}
+
+void handle_ping(CommandHandler *ch) { add_simple_string_reply(ch->client, "PONG"); }
+
+void handle_echo(CommandHandler *ch) { add_simple_string_reply(ch->client, ch->args[1]); }
+
+void handle_set(CommandHandler *ch) {
+  if (ch->arg_count > 2) {
+    set_value(h, ch->args[1], ch->args[2], TYPE_STRING);
+    add_simple_string_reply(ch->client, "OK");
+  } else {
+    add_error_reply(ch->client, "ERR wrong number of arguments");
   }
 }
 
-void handle_echo(int ConnectFD, char *response) {
-  add_reply(ConnectFD, serialize_bulk_string(response), 1);
-}
-
-void handle_set(int ConnectFD, char *key, char *value) {
-  set_value(h, key, value, TYPE_STRING);
-  add_reply(ConnectFD, "+OK\r\n", 0);
-}
-
-void handle_get(int ConnectFD, char *key) {
-  RedisValue *redis_value = get_value(h, key);
+void handle_get(CommandHandler *ch) {
+  RedisValue *redis_value = get_value(h, ch->args[1]);
   if (redis_value == NULL) {
-    add_reply(ConnectFD, "$-1\r\n", 0);
+    add_null_reply(ch->client);
   } else {
-    add_reply(ConnectFD, serialize_bulk_string(redis_value->data.str), 1);
+    add_bulk_string_reply(ch->client, redis_value->data.str); // Send the bulk string reply
   }
 }
 
@@ -127,30 +137,170 @@ CommandType get_command_type(char *command) {
     return CMD_UNKNOWN;
 }
 
-void handle_command(int ConnectFD, char **parsed_command, int count) {
-  CommandType command_type = get_command_type(parsed_command[0]);
+void handle_command(CommandHandler *ch) {
+
+  CommandType command_type = get_command_type(ch->args[0]);
+
   switch (command_type) {
   case CMD_PING:
-    add_reply(ConnectFD, "+PONG\r\n", 0);
+    handle_ping(ch);
     break;
   case CMD_ECHO:
-    if (count > 1) handle_echo(ConnectFD, parsed_command[1]);
+    handle_echo(ch);
     break;
   case CMD_SET:
-    if (count > 2) {
-      char *key = parsed_command[1];
-      char *value = parsed_command[2];
-      handle_set(ConnectFD, key, value);
-    }
+    handle_set(ch);
     break;
   case CMD_GET:
-    if (count > 1) handle_get(ConnectFD, parsed_command[1]);
+    handle_get(ch);
     break;
   default:
-    add_reply(ConnectFD, serialize_error("ERR unknown command"), 1);
+    add_error_reply(ch->client, "ERR unknown command");
     break;
   }
-  free_command(parsed_command, count);
+}
+
+void flush_output_buffer(Client *client) {
+  char *output_buf;
+  size_t readable_len;
+
+  // get the readable portion of the ring buffer
+  while (1) {
+    if (rb_readable(client->output_buffer, &output_buf, &readable_len) != 0) {
+      fprintf(stderr, "Failed to get readable buffer\n");
+      return;
+    }
+
+    if (readable_len == 0) {
+      // no more data to send
+      break;
+    }
+
+    ssize_t bytes_sent = write(client->fd, output_buf, readable_len);
+
+    if (bytes_sent < 0) {
+      if (errno == EINTR) {
+        continue; // Interrupted system call, retry
+      } else if (errno == EWOULDBLOCK) {
+        // Socket would block; exit the loop
+        break;
+      } else {
+        perror("Failed to send data to client");
+        return; // Handle error appropriately
+      }
+    } else if (bytes_sent == 0) {
+      // No bytes sent; this may indicate that the socket is not ready.
+      break; // Exit if nothing was sent
+    }
+
+    rb_read(client->output_buffer, bytes_sent);
+  }
+}
+
+Client *create_client(int fd, Handler *handler) {
+  Client *client = malloc(sizeof(Client));
+  if (!client) return NULL;
+
+  client->fd = fd;
+
+  // create a ring buffer of 64KB (adjust size as needed)
+  if (rb_create(65536, &client->input_buffer) != 0 ||
+      rb_create(65536, &client->output_buffer) != 0) {
+    free(client);
+    return NULL;
+  }
+
+  client->parser = malloc(sizeof(Parser));
+  if (!client->parser) {
+    rb_destroy(client->input_buffer);
+    rb_destroy(client->output_buffer);
+    free(client);
+    return NULL;
+  }
+
+  int buffer_size = 1 << 20; // 1MB
+  setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+
+  return client;
+}
+
+void client_free(Client *client) {
+  close(client->fd);
+  rb_destroy(client->input_buffer);
+  free(client->parser);
+  free(client);
+}
+
+void client_on_readable(Client *client) {
+  for (;;) {
+
+    char *write_buf;
+    size_t writable_len;
+
+    // get the writable portion of the ring buffer
+    if (rb_writable(client->input_buffer, &write_buf, &writable_len) != 0) {
+      fprintf(stderr, "failed to get writable buffer\n");
+      return;
+    }
+
+    if (writable_len == 0) {
+      fprintf(stderr, "input buffer full\n");
+      return;
+    }
+
+    // read from the socket into the writable portion of the ring buffer
+    ssize_t bytes_received = read(client->fd, write_buf, writable_len);
+
+    switch (bytes_received) {
+    case -1:
+      if (errno == EINTR) {
+        continue;
+      } else if (errno == EWOULDBLOCK) {
+        flush_output_buffer(client);
+        return;
+      } else {
+        perror("failed to read from client socket");
+        return;
+      }
+    case 0:
+      fprintf(stderr, "client disconnected\n");
+
+      close(client->fd); // Close the socket
+      destroy_command_handler(client->parser->command_handler);
+      destroy_parser(client->parser);
+      return;
+    default:
+      // update the write index of the ring buffer
+      if (rb_write(client->input_buffer, bytes_received) != 0) {
+        fprintf(stderr, "failed to update write index\n");
+        return;
+      }
+    }
+
+    char *read_buf;
+    size_t readable_len;
+
+    // get the readable portion of the ring buffer
+    if (rb_readable(client->input_buffer, &read_buf, &readable_len) != 0) {
+      fprintf(stderr, "failed to get readable buffer\n");
+      return;
+    }
+
+    const char *begin = read_buf;
+    const char *end = read_buf + readable_len;
+
+    size_t bytes_parsed = parser_parse(client->parser, begin, end) - begin;
+
+    if (rb_read(client->input_buffer, bytes_parsed)) {
+      fprintf(stderr, "failed to update read index\n");
+      return;
+    }
+
+    if (bytes_received < writable_len) {
+      flush_output_buffer(client);
+      return;
+    }
+  }
 }
 
 volatile sig_atomic_t stop_server = 0;
@@ -199,15 +349,18 @@ int start_server() {
 
   struct epoll_event event;
   event.events = EPOLLIN; // EPOLLIN is the flag for read events
-  event.data.fd = SocketFD;
+  // event.data.fd = SocketFD;
+  event.data.ptr = NULL;
 
-  if (epoll_ctl(epfd, EPOLL_CTL_ADD, SocketFD, &event) == 1) {
+  if (epoll_ctl(epfd, EPOLL_CTL_ADD, SocketFD, &event) == -1) {
     perror("epoll_ctl failed");
     exit(EXIT_FAILURE);
   }
 
   struct epoll_event events[MAX_EVENTS];
   int num_events;
+
+  Handler *handler = create_handler();
 
   for (;;) {
     num_events = epoll_wait(epfd, events, MAX_EVENTS, -1);
@@ -218,7 +371,8 @@ int start_server() {
 
     // iterate through the events
     for (int i = 0; i < num_events; i++) {
-      if (events[i].data.fd == SocketFD) { // server socket is ready, new connection
+      struct epoll_event *current_event = &events[i];
+      if (!current_event->data.ptr) { // server socket is ready, new connection
         int ConnectFD = accept(SocketFD, NULL, NULL);
         if (ConnectFD == -1) {
           perror("accept failed");
@@ -226,47 +380,42 @@ int start_server() {
           exit(EXIT_FAILURE);
         }
 
+        Client *client = create_client(ConnectFD, handler);
+        CommandHandler *command_handler = create_command_handler(client, 256, 10);
+        parser_init(client->parser, handler, command_handler);
+
         int optval = 1;
         setsockopt(ConnectFD, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
         event.events = EPOLLIN;
         event.data.fd = ConnectFD;
+        event.data.ptr = client;
 
         if (epoll_ctl(epfd, EPOLL_CTL_ADD, ConnectFD, &event) == -1) {
           perror("epoll_ctl failed");
           exit(EXIT_FAILURE);
         }
+      } else if (events[i].events & EPOLLIN) {
+        Client *client = (Client *)current_event->data.ptr;
+        client_on_readable(client);
+      } else if (events[i].events & EPOLLHUP | EPOLLERR) {
+        Client *client = (Client *)current_event->data.ptr;
+        destroy_command_handler(client->parser->command_handler);
+        destroy_parser(client->parser);
+        client_free(current_event->data.ptr);
+        epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
       } else {
-        char buffer[BUFFER_SIZE];
-        ssize_t bytes_received;
-
-        // read from the client
-        bytes_received = recv(events[i].data.fd, buffer, BUFFER_SIZE - 1, 0);
-        if (bytes_received > 0) {
-          buffer[bytes_received] = '\0'; // null terminate the received string
-          printf("Received: %s\n", buffer);
-          int count;
-          char **parsed_command = deserialize_command(buffer, &count);
-          if (parsed_command && count > 0) {
-            handle_command(events[i].data.fd, parsed_command, count); // handle the command
-          }
-        } else if (bytes_received == 0) {
-          printf("Client disconnected\n");
-          close(events[i].data.fd);
-          epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
-        } else {
-          printf("read failed");
-          close(events[i].data.fd);
-          epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
-        }
+        fprintf(stderr, "Unexpected event type: %d\n", events[i].events);
       }
-    }
-    if (stop_server) {
-      break;
+
+      if (stop_server) {
+        break;
+      }
     }
   }
   close(epfd);
   close(SocketFD);
   cleanup_hash(h);
+  destory_handler(handler);
   return EXIT_SUCCESS;
 }

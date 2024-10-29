@@ -5,6 +5,8 @@ add_executable(redis_lite
     src/main.c
     src/resp.c
     src/server.c
+    src/command_handler.c
+    src/ring_buffer.c
 )
 
 # GoogleTest requires at least C++14

@@ -1,3 +1,6 @@
+/*
+This ring buffer implementation was made by buckfullingham: https://github.com/buckfullingham
+*/
 #ifndef REDIS_RING_BUFFER_H
 #define REDIS_RING_BUFFER_H
 
