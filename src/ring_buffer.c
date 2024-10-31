@@ -1,5 +1,5 @@
 /*
-This ring buffer implementation was made by buckfullingham:
+This ring buffer implementation was made by buckfullingham: https://github.com/buckfullingham
 */
 #include "ring_buffer.h"
 
