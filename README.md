@@ -2,7 +2,7 @@
 
 This ongoing project is a lightweight Redis compatible server implementation in C, created as part of the [Coding Challenges](https://codingchallenges.fyi/challenges/challenge-redis) project.
 
-Currently working on improving the performance of this server using a variety of techniques from introducing a state machine to efficiently parse messages, to using separate input and output buffers for each client, all in all to allow better concurrent handling of requests.
+Currently working on improving the performance of this server using a variety of techniques from introducing a state machine to efficiently parse messages, to using separate input and output buffers for each client, to epoll-based I/O multiplexing, all in all to allow better concurrent handling of requests.
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
