@@ -1,96 +1,103 @@
 extern "C" {
+#include "mock_handler.h"
 #include "resp.h"
 }
 #include <gtest/gtest.h>
 
-TEST(SerializeTest, HandleSimpleString) {
-  const char *input = "Ok";
-  char *result = serialize_simple_string(input);
-  EXPECT_STREQ(result, "+Ok\r\n");
-  free(result);
+class ParseTest : public ::testing::Test {
+protected:
+  Handler *mock_handler;
+  CommandHandler *mock_ch;
+  Parser parser;
+
+  void SetUp() override {
+    mock_handler = create_mock_handler();
+    mock_ch = create_mock_command_handler();
+    parser_init(&parser, mock_handler, mock_ch);
+  }
+
+  void TearDown() override {
+    destroy_mock_handler(mock_handler);
+    destroy_mock_command_handler(mock_ch);
+  }
+};
+
+TEST_F(ParseTest, SimpleString) {
+  const char *input = "+hello world\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleError) {
-  const char *input = "Error message";
-  char *result = serialize_error(input);
-  EXPECT_STREQ(result, "-Error message\r\n");
-  free(result);
+TEST_F(ParseTest, SimpleError) {
+  const char *input = "-bad error";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleInteger) {
-  const int input = 55;
-  char *result = serialize_integer(input);
-  EXPECT_STREQ(result, ":55\r\n");
-  free(result);
+TEST_F(ParseTest, Integer_SmallValue) {
+  const char *input = ":0\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleBulkString) {
-  const char *input = "Hello";
-  char *result = serialize_bulk_string(input);
-  EXPECT_STREQ(result, "$5\r\nHello\r\n");
-  free(result);
+TEST_F(ParseTest, Integer_LargeValue) {
+  const char *input = ":12345678\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleNullBulkString) {
-  char *result = serialize_bulk_string(NULL);
-  EXPECT_STREQ(result, "$-1\r\n");
-  free(result);
+TEST_F(ParseTest, BulkString_ValidInput) {
+  const char *input = "$10\r\nabcdefghir\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleArrayOfBulkStrings) {
-  const char *input[] = {"hello", "world"};
-  char *result = serialize_array(input, 2);
-  EXPECT_STREQ(result, "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n");
-  free(result);
+TEST_F(ParseTest, BulkString_NullBulkString) {
+  const char *input = "$-1\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleEmptyArray) {
-  char *result = serialize_array(NULL, 0);
-  EXPECT_STREQ(result, "*-1\r\n");
-  free(result);
+TEST_F(ParseTest, BulkString_EmptyInput) {
+  const char *input = "$0\r\n\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(SerializeTest, HandleArrayWithNullElements) {
-  const char *input[] = {"hello", NULL, "world"};
-  char *result = serialize_array(input, 3);
-  EXPECT_STREQ(result, "*3\r\n$5\r\nhello\r\n$-1\r\n$5\r\nworld\r\n");
-  free(result);
+TEST_F(ParseTest, Array_ValidInput) {
+  const char *input = "*4\r\n$4\r\necho\r\n$11\r\nhello world\r\n$4\r\necho\r\n$2\r\nhi\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(DeserializeCommandTest, PingInline) {
-  const char *input = "PING\n";
-  int count;
-  char **result = deserialize_command(input, &count);
+TEST_F(ParseTest, Array_NullValue) {
+  const char *input = "*-1\r\n";
 
-  ASSERT_NE(result, nullptr);
-  EXPECT_EQ(count, 1);
-  EXPECT_STREQ(result[0], "PING");
+  const char *end = parser_parse(&parser, input, input + strlen(input));
 
-  free_command(result, count);
+  ASSERT_EQ(end, input + strlen(input));
 }
 
-TEST(DeserializeCommandTest, ValidCommand) {
-  const char *input = "*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n";
-  int count;
-  char **result = deserialize_command(input, &count);
+TEST_F(ParseTest, InlineCommand) {
+  const char *input = "SET KEY VALUE";
 
-  ASSERT_NE(result, nullptr);
-  EXPECT_EQ(count, 2);
-  EXPECT_STREQ(result[0], "echo");
-  EXPECT_STREQ(result[1], "hello world");
+  const char *end = parser_parse(&parser, input, input + strlen(input));
 
-  free_command(result, count);
-}
-
-TEST(DeserializeCommandTest, NullBulkString) {
-  const char *input = "*3\r\n$3\r\nget\r\n$-1\r\n$4\r\nName\r\n";
-  int count;
-  char **result = deserialize_command(input, &count);
-
-  ASSERT_NE(result, nullptr);
-  EXPECT_STREQ(result[0], "get");
-  EXPECT_EQ(result[1], nullptr);
-  EXPECT_STREQ(result[2], "Name");
-
-  free_command(result, count);
+  ASSERT_EQ(end, input + strlen(input));
 }
