@@ -20,7 +20,7 @@
 #include <errno.h>
 
 #define DEFAULT_PORT 6379
-#define BUFFER_SIZE 1024
+#define RING_BUFFER_SIZE 65536
 #define MAX_EVENTS 10000
 
 KHASH_MAP_INIT_STR(redis_hash, RedisValue *);
@@ -218,8 +218,8 @@ Client *create_client(int fd, Handler *handler) {
   client->fd = fd;
 
   // create a ring buffer of 64KB (adjust size as needed)
-  if (rb_create(65536, &client->input_buffer) != 0 ||
-      rb_create(65536, &client->output_buffer) != 0) {
+  if (rb_create(RING_BUFFER_SIZE, &client->input_buffer) != 0 ||
+      rb_create(RING_BUFFER_SIZE, &client->output_buffer) != 0) {
     free(client);
     return NULL;
   }
