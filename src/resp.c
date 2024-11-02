@@ -364,18 +364,26 @@ ParseResult parse_array(Parser *parser, const char *begin, const char *end) {
 
 size_t count_tokens(const char *str) {
   size_t token_count = 0;
-  int in_token = 0; // Flag to track if we are inside a token
+  int in_token = 0;
+  int quote_char = 0;
 
   while (*str) {
-    if (*str == ' ') {
-      if (in_token) {
-        in_token = 0; // Exiting a token
+    // inside quotes
+    if (quote_char) {
+      if (*str == quote_char) {
+        quote_char = 0; // exit quotes
       }
-    } else {
+    } else if (*str == '\'' || *str == '"') {
+      quote_char = *str; // enter quotes
       if (!in_token) {
-        token_count++; // Found a new token
-        in_token = 1;  // Entering a token
+        token_count++;
+        in_token = 1;
       }
+    } else if (*str == ' ') {
+      in_token = 0;
+    } else if (!in_token) {
+      token_count++;
+      in_token = 1;
     }
     str++;
   }
@@ -392,32 +400,44 @@ ParseResult parse_inline_command(Parser *parser, const char *begin, const char *
   }
 
   if (pos != end) {
+    size_t token_count = count_tokens(begin); // count tokens
+    parser->handler->begin_array(parser->command_handler, token_count);
 
     // process characters up to CR
     const char *token_start = begin;
+    const char *token_end;
+    char quote_char = 0;
 
-    size_t command_length = pos - begin; // length of the command
+    while (token_start < pos) {
+      // skip leading spaces
+      while (token_start < pos && *token_start == ' ') {
+        token_start++;
+      }
+      if (token_start >= pos) break;
 
-    char command_copy[command_length + 1];
-    strncpy(command_copy, begin, command_length);
-    command_copy[command_length] = '\0';
+      if (*token_start == '"' || *token_start == '\'') {
+        quote_char = *token_start;
+        token_start++; // move past the openng quote
+        token_end = memchr(token_start, quote_char, pos - token_start);
+        if (!token_end) {
+          token_end = pos; // if no closing quote, use the end of the command
+        }
+      } else {
+        token_end = memchr(token_start, ' ', pos - token_start);
+        if (!token_end) token_end = pos;
+      }
 
-    const char *delimiter = " ";
-
-    size_t token_count = count_tokens(begin); // count tokens
-
-    char *token = strtok(command_copy, delimiter);
-
-    parser->handler->begin_array(parser->command_handler, token_count);
-
-    while (token != NULL) {
-      size_t token_length = strlen(token);
-
+      size_t token_length = token_end - token_start;
       parser->handler->begin_bulk_string(parser->command_handler, token_length);
-      parser->handler->chars(parser->command_handler, token, token + token_length);
+      parser->handler->chars(parser->command_handler, token_start, token_end);
       parser->handler->end_bulk_string(parser->command_handler);
 
-      token = strtok(NULL, delimiter); // get the next token
+      token_start = (token_end < pos) ? token_end + 1 : token_end;
+
+      if (quote_char) {
+        token_start++; // move past the closing quote
+        quote_char = 0;
+      }
     }
 
     parser->handler->end_array(parser->command_handler);
