@@ -28,13 +28,12 @@ Handler *create_mock_handler() {
   handler->end_bulk_string = mock_end_bulk_string_handler;
   handler->chars = mock_chars_handler;
 
-  // Initialize unused handlers to NULL or dummy functions
-  handler->begin_simple_string = mock_function;
-  handler->end_simple_string = mock_function;
-  handler->begin_error = mock_function;
-  handler->end_error = mock_function;
-  handler->begin_integer = mock_function;
-  handler->end_integer = mock_function;
+  handler->begin_simple_string = unimplemented;
+  handler->end_simple_string = unimplemented;
+  handler->begin_error = unimplemented;
+  handler->end_error = unimplemented;
+  handler->begin_integer = unimplemented;
+  handler->end_integer = unimplemented;
 
   return handler;
 }
