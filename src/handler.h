@@ -20,5 +20,6 @@ typedef struct Handler {
 } Handler;
 
 Handler *create_handler();
+void destroy_handler(Handler *handler);
 
 #endif // HANDLER_H

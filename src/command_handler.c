@@ -118,6 +118,8 @@ void chars_handler(CommandHandler *ch, const char *begin, const char *end) {
   ch->buf_used += len;
 }
 
+void unimplemented() { perror("unimplemented"); }
+
 // create handler interface for the parser
 Handler *create_handler() {
   Handler *handler = malloc(sizeof(Handler));
@@ -134,12 +136,12 @@ Handler *create_handler() {
   handler->chars = chars_handler;
 
   // Initialize unused handlers to NULL or dummy functions
-  handler->begin_simple_string = NULL;
-  handler->end_simple_string = NULL;
-  handler->begin_error = NULL;
-  handler->end_error = NULL;
-  handler->begin_integer = NULL;
-  handler->end_integer = NULL;
+  handler->begin_simple_string = unimplemented;
+  handler->end_simple_string = unimplemented;
+  handler->begin_error = unimplemented;
+  handler->end_error = unimplemented;
+  handler->begin_integer = unimplemented;
+  handler->end_integer = unimplemented;
 
   return handler;
 }

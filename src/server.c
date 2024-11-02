@@ -437,6 +437,6 @@ int start_server() {
   close(epfd);
   close(SocketFD);
   cleanup_hash(h);
-  destory_handler(handler);
+  destroy_handler(handler);
   return EXIT_SUCCESS;
 }

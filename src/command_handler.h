@@ -32,7 +32,6 @@ void begin_bulk_string_handler(CommandHandler *ch, int64_t len);
 void end_bulk_string_handler(CommandHandler *ch);
 void chars_handler(CommandHandler *ch, const char *begin, const char *end);
 void destroy_command_handler(CommandHandler *ch);
-void destory_handler(struct Handler *h);
 
 #ifdef __cplusplus
 }
