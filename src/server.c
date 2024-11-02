@@ -100,16 +100,30 @@ void add_error_reply(Client *client, const char *str) {
   write_end_error(client->output_buffer);
 }
 
-void handle_ping(CommandHandler *ch) { add_simple_string_reply(ch->client, "PONG"); }
+void handle_ping(CommandHandler *ch) {
+  if (ch->arg_count == 1) {
+    add_simple_string_reply(ch->client, "PONG");
+  } else if (ch->arg_count == 2) {
+    add_simple_string_reply(ch->client, ch->args[1]);
+  } else {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'ping' command");
+  }
+}
 
-void handle_echo(CommandHandler *ch) { add_simple_string_reply(ch->client, ch->args[1]); }
+void handle_echo(CommandHandler *ch) {
+  if (ch->arg_count == 2) {
+    add_simple_string_reply(ch->client, ch->args[1]);
+  } else {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'echo' command");
+  }
+}
 
 void handle_set(CommandHandler *ch) {
   if (ch->arg_count > 2) {
     set_value(h, ch->args[1], ch->args[2], TYPE_STRING);
     add_simple_string_reply(ch->client, "OK");
   } else {
-    add_error_reply(ch->client, "ERR wrong number of arguments");
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'set' command");
   }
 }
 
@@ -326,6 +340,13 @@ int start_server() {
   sa.sin_family = AF_INET;
   sa.sin_port = htons(DEFAULT_PORT);
   sa.sin_addr.s_addr = htonl(INADDR_ANY);
+
+  // set SO_REUSEADDR option
+  int opt = 1;
+  if (setsockopt(SocketFD, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+    perror("setsockopt");
+    exit(EXIT_FAILURE);
+  }
 
   if (bind(SocketFD, (struct sockaddr *)&sa, sizeof sa) == -1) {
     perror("bind failed");
