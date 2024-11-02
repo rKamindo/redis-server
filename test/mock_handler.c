@@ -13,7 +13,7 @@ static void mock_end_bulk_string_handler(struct CommandHandler *ch) {}
 static void mock_chars_handler(struct CommandHandler *ch, const char *begin, const char *end) {}
 
 // to be used for unimplemented operations
-static void mock_function() {}
+static void unimplemented() { perror("unimplemented"); }
 
 Handler *create_mock_handler() {
   Handler *handler = malloc(sizeof(Handler));
