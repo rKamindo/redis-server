@@ -1,5 +1,7 @@
 #include "resp.h"
 #include "ring_buffer.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -272,51 +274,46 @@ ParseResult parse_simple(Parser *parser, const char *begin, const char *end) {
 ParseResult parse_length(Parser *parser, const char *begin, const char *end) {
   if (begin == end) return (ParseResult){false, begin};
 
-  // parse the length
-  const char *pos = begin;
   int64_t length = 0;
-  int sign = 1;
 
-  // check for negative length
-  if (*pos == '-') {
-    sign = -1;
-    pos++;
+  // will store the first character not converted into part of the length
+  char *end_ptr;
+
+  errno = 0;
+  length = strtol(begin, &end_ptr, 10);
+
+  if (end_ptr == begin || end_ptr >= end - 1 || errno != 0) {
+    return (ParseResult){false, begin};
   }
 
-  while (pos < end - 1) {
-    if (pos[0] == cr && pos[1] == lf) {
-      // found CRLF
-      if (pos == begin || (sign == -1 && pos == begin + 1)) {
-        // empty of just a minus sign
-        return (ParseResult){false, begin};
-      }
-
-      length *= sign;
-
-      if (parser->stack[parser->stack_top].type == STATE_ARRAY_LENGTH) {
-        // remove the length state
-        pop_state(parser);
-        parser->handler->begin_array(parser->command_handler, length);
-        push_state(parser, STATE_ARRAY, length, parse_array, parser->handler->end_array);
-      } else if (parser->stack[parser->stack_top].type == STATE_BULK_STRING_LENGTH) {
-        // remove the length state
-        pop_state(parser);
-        parser->handler->begin_bulk_string(parser->command_handler, length);
-        push_state(parser, STATE_BULK_STRING, length, parse_bulk_string,
-                   parser->handler->end_bulk_string);
-      }
-
-      return (ParseResult){true, pos + 2}; // move past CRLF
-    } else if (*pos < '0' || *pos > '9') {
-      // invalid character
-      return (ParseResult){false, begin};
-    }
-    length = length * 10 + (*pos - '0');
-    pos++;
+  if (end_ptr[0] != '\r' || end_ptr[1] != '\n') {
+    return (ParseResult){false, begin};
   }
 
-  // reached end without finding CRLF
-  return (ParseResult){false, begin};
+  // check if the length can fit in an int
+  if (length > INT_MAX || length < INT_MIN) {
+    return (ParseResult){false, begin};
+  }
+
+  int int_length = (int)length;
+
+  if (parser->stack[parser->stack_top].type == STATE_ARRAY_LENGTH) {
+    // remove the length state
+    pop_state(parser);
+    parser->handler->begin_array(parser->command_handler, int_length);
+    push_state(parser, STATE_ARRAY, int_length, parse_array, parser->handler->end_array);
+  } else if (parser->stack[parser->stack_top].type == STATE_BULK_STRING_LENGTH) {
+    // remove the length state
+    pop_state(parser);
+    parser->handler->begin_bulk_string(parser->command_handler, int_length);
+    push_state(parser, STATE_BULK_STRING, int_length, parse_bulk_string,
+               parser->handler->end_bulk_string);
+  } else {
+    // unexpected state
+    return (ParseResult){false, begin};
+  }
+
+  return (ParseResult){true, end_ptr + 2}; // move past CRLF
 }
 
 // returns the minimum of two values
