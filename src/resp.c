@@ -271,7 +271,7 @@ ParseResult parse_simple(Parser *parser, const char *begin, const char *end) {
 
 ParseResult parse_length(Parser *parser, const char *begin, const char *end) {
   if (begin == end) return (ParseResult){false, begin};
-  // "*4\r\n$4\r\necho\r\n$11\r\nhello world\r\n$4\r\necho\r\n$2\r\nhi\r\n”
+
   // parse the length
   const char *pos = begin;
   int64_t length = 0;
