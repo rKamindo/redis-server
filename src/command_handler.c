@@ -135,7 +135,7 @@ Handler *create_handler() {
   handler->end_bulk_string = end_bulk_string_handler;
   handler->chars = chars_handler;
 
-  // Initialize unused handlers to NULL or dummy functions
+  // set unused handler functions to an unimplemented function
   handler->begin_simple_string = unimplemented;
   handler->end_simple_string = unimplemented;
   handler->begin_error = unimplemented;
