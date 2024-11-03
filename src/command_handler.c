@@ -160,7 +160,6 @@ void destroy_command_handler(CommandHandler *ch) {
 
 void destroy_handler(Handler *handler) {
   if (handler) {
-
     free(handler);
   }
 }
