@@ -28,14 +28,15 @@ TEST_F(ParseTest, SimpleString) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
-
 TEST_F(ParseTest, SimpleError) {
-  const char *input = "-bad error";
+  const char *input = "-good error\r\n";
 
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, Integer_SmallValue) {
@@ -44,6 +45,7 @@ TEST_F(ParseTest, Integer_SmallValue) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, Integer_LargeValue) {
@@ -52,14 +54,16 @@ TEST_F(ParseTest, Integer_LargeValue) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, BulkString_ValidInput) {
-  const char *input = "$10\r\nabcdefghir\n";
+  const char *input = "$10\r\nabcdefghij\r\n";
 
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, BulkString_NullBulkString) {
@@ -68,6 +72,7 @@ TEST_F(ParseTest, BulkString_NullBulkString) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, BulkString_EmptyInput) {
@@ -76,6 +81,7 @@ TEST_F(ParseTest, BulkString_EmptyInput) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, Array_ValidInput) {
@@ -84,6 +90,7 @@ TEST_F(ParseTest, Array_ValidInput) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
 TEST_F(ParseTest, Array_NullValue) {
@@ -92,12 +99,32 @@ TEST_F(ParseTest, Array_NullValue) {
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
 
-TEST_F(ParseTest, InlineCommand) {
-  const char *input = "SET KEY VALUE";
+TEST_F(ParseTest, InlineCommand_Set) {
+  const char *input = "SET KEY VALUE\r\n";
 
   const char *end = parser_parse(&parser, input, input + strlen(input));
 
   ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
+}
+
+TEST_F(ParseTest, InlineCommand_Echo_MultiWordArgument_InQuotes) {
+  const char *input = "ECHO 'HELLO WORLD'\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
+}
+
+TEST_F(ParseTest, InlineCommand_Echo_SingleWordArgument) {
+  const char *input = "ECHO HELLO\r\n";
+
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+
+  ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
 }
