@@ -148,20 +148,19 @@ Handler *create_handler() {
 
 void destroy_command_handler(CommandHandler *ch) {
   if (ch) {
-    // Free the allocated buffers
     free(ch->buf);
     for (size_t i = 0; i < ch->arg_count; i++) {
-      free(ch->args[i]); // Free each argument
+      free(ch->args[i]);
     }
     free(ch->args);
     free(ch->ends);
-    free(ch); // Finally, free the CommandHandler itself
+    free(ch);
   }
 }
 
 void destroy_handler(Handler *handler) {
   if (handler) {
-    // Free any other resources associated with handler if needed
+
     free(handler);
   }
 }
