@@ -5,7 +5,7 @@ extern "C" {
 
 // test fixture class for setting and tearing down common test resources
 class ServerTest : public ::testing::Test {
- protected:
+protected:
   khash_t(redis_hash) * h;
 
   void SetUp() override { h = kh_init(redis_hash); }
@@ -14,55 +14,50 @@ class ServerTest : public ::testing::Test {
 };
 
 TEST_F(ServerTest, SetValueString) {
-  const char* key = "test_key";
-  const char* value = "test_value";
+  const char *key = "test_key";
+  const char *value = "test_value";
   set_value(h, key, value, TYPE_STRING);
 
-  // verify the value was set correctly
   khiter_t k = kh_get(redis_hash, h, key);
   ASSERT_NE(k, kh_end(h));
-  EXPECT_EQ(kh_value(h, k).type, TYPE_STRING);
-  EXPECT_STREQ(kh_value(h, k).data.str, value);
+  RedisValue *rv = kh_value(h, k);
+  EXPECT_EQ(rv->type, TYPE_STRING);
+  EXPECT_STREQ(rv->data.str, value);
 }
 
 TEST_F(ServerTest, OverwriteExistingStringValue) {
-  const char* key = "test_key";
-  const char* initial_value = "initial_value";
-  const char* new_value = "new_value";
+  const char *key = "test_key";
+  const char *initial_value = "initial_value";
+  const char *new_value = "new_value";
 
-  // set the initial value
   set_value(h, key, initial_value, TYPE_STRING);
 
-  // verify the initial value was set correctly
   khiter_t k = kh_get(redis_hash, h, key);
   ASSERT_NE(k, kh_end(h));
-  EXPECT_EQ(kh_value(h, k).type, TYPE_STRING);
-  EXPECT_STREQ(kh_value(h, k).data.str, initial_value);
+  RedisValue *rv = kh_value(h, k);
+  EXPECT_EQ(rv->type, TYPE_STRING);
+  EXPECT_STREQ(rv->data.str, initial_value);
 
-  // overwrite with the new value
   set_value(h, key, new_value, TYPE_STRING);
-  k = kh_get(redis_hash, h, key);  // re-fetch the iterator
+  k = kh_get(redis_hash, h, key);
   ASSERT_NE(k, kh_end(h));
-  EXPECT_EQ(kh_value(h, k).type, TYPE_STRING);
-  EXPECT_STREQ(kh_value(h, k).data.str, new_value);
+  rv = kh_value(h, k);
+  EXPECT_EQ(rv->type, TYPE_STRING);
+  EXPECT_STREQ(rv->data.str, new_value);
 }
 
 TEST_F(ServerTest, GetValueString) {
-  const char* key = "test_key";
-  const char* value = "test_value";
+  const char *key = "test_key";
+  const char *value = "test_value";
   set_value(h, key, value, TYPE_STRING);
 
-  // retrieve value
-  RedisValue* retrieved_value = get_value(h, key);
+  RedisValue *retrieved_value = get_value(h, key);
   ASSERT_NE(retrieved_value, nullptr);
   EXPECT_EQ(retrieved_value->type, TYPE_STRING);
   EXPECT_STREQ(retrieved_value->data.str, value);
 }
 
 TEST_F(ServerTest, GetValueKeyNotFound) {
-  const char* value = "test_value";
-
-  // retrieve value
-  RedisValue* retrieved_value = get_value(h, "test_key");
+  RedisValue *retrieved_value = get_value(h, "test_key");
   ASSERT_EQ(retrieved_value, nullptr);
 }
