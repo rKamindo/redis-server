@@ -23,7 +23,6 @@
 #define RING_BUFFER_SIZE 65536
 #define MAX_EVENTS 10000
 
-KHASH_MAP_INIT_STR(redis_hash, RedisValue *);
 khash_t(redis_hash) * h;
 
 void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type) {

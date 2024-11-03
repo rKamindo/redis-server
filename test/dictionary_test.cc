@@ -4,7 +4,7 @@ extern "C" {
 #include <gtest/gtest.h>
 
 // test fixture class for setting and tearing down common test resources
-class ServerTest : public ::testing::Test {
+class DictionaryTest : public ::testing::Test {
 protected:
   khash_t(redis_hash) * h;
 
@@ -13,7 +13,7 @@ protected:
   void TearDown() override { cleanup_hash(h); }
 };
 
-TEST_F(ServerTest, SetValueString) {
+TEST_F(DictionaryTest, SetValueString) {
   const char *key = "test_key";
   const char *value = "test_value";
   set_value(h, key, value, TYPE_STRING);
@@ -25,7 +25,7 @@ TEST_F(ServerTest, SetValueString) {
   EXPECT_STREQ(rv->data.str, value);
 }
 
-TEST_F(ServerTest, OverwriteExistingStringValue) {
+TEST_F(DictionaryTest, OverwriteExistingStringValue) {
   const char *key = "test_key";
   const char *initial_value = "initial_value";
   const char *new_value = "new_value";
@@ -46,7 +46,7 @@ TEST_F(ServerTest, OverwriteExistingStringValue) {
   EXPECT_STREQ(rv->data.str, new_value);
 }
 
-TEST_F(ServerTest, GetValueString) {
+TEST_F(DictionaryTest, GetValueString) {
   const char *key = "test_key";
   const char *value = "test_value";
   set_value(h, key, value, TYPE_STRING);
@@ -57,7 +57,7 @@ TEST_F(ServerTest, GetValueString) {
   EXPECT_STREQ(retrieved_value->data.str, value);
 }
 
-TEST_F(ServerTest, GetValueKeyNotFound) {
+TEST_F(DictionaryTest, GetValueKeyNotFound) {
   RedisValue *retrieved_value = get_value(h, "test_key");
   ASSERT_EQ(retrieved_value, nullptr);
 }

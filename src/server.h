@@ -22,10 +22,11 @@ typedef struct {
   } data;
 } RedisValue;
 
-// void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type);
-// RedisValue *get_value(khash_t(redis_hash) * h, const char *key);
-// void cleanup_hash(khash_t(redis_hash) * h);
-// void send_response(int ConnectFD, const char *response);
+KHASH_MAP_INIT_STR(redis_hash, RedisValue *)
+
+void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type);
+RedisValue *get_value(khash_t(redis_hash) * h, const char *key);
+void cleanup_hash(khash_t(redis_hash) * h);
 void handle_command(struct CommandHandler *ch);
 int start_server();
 
