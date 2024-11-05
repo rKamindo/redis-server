@@ -20,11 +20,22 @@ typedef struct {
   union {
     char *str;
   } data;
+  time_t expiration;
 } RedisValue;
+
+typedef struct {
+  long long expiration; // expiration time in milliseconds sinch epoch
+  int nx;               // flag for NX option
+  int xx;               // flag for XX option
+  int keepttl;          // flag for KEEPTTL option
+  int get;              // flag for get option
+} SetOptions;
 
 KHASH_MAP_INIT_STR(redis_hash, RedisValue *)
 
-void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type);
+long long current_time_millis();
+void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
+               long long expiration);
 RedisValue *get_value(khash_t(redis_hash) * h, const char *key);
 void cleanup_hash(khash_t(redis_hash) * h);
 void handle_command(struct CommandHandler *ch);
