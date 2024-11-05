@@ -1,197 +1,448 @@
+#include "resp.h"
+#include "ring_buffer.h"
+#include <errno.h>
+#include <limits.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// Serialization functions
+const char cr = '\r';
+const char lf = '\n';
+const char crlf[2] = "\r\n";
 
-// Serialize a simple string
-char *serialize_simple_string(const char *str) {
-  // check for null input
-  if (str == NULL) {
-    return NULL;
+void write_begin_simple_string(ring_buffer rb) {
+  // check if there is enough writable space in the ring buffer
+  char *output_buf;
+  size_t writable_len;
+
+  // get writable space in the ring buffer
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 1) {
+    perror("not enough space in ring buffer to write simple string start.\n");
+    return;
   }
 
-  // calculate the length of the input string
-  size_t len = strlen(str);
-
-  // allocate memory for the serialized string
-  // length = 1 (for '+') + len (for the string) + 2 (for "\r\n") + 1 for null
-  // terminator
-  char *serialized = (char *)malloc(len + 4);
-  if (serialized == NULL) {
-    return NULL; // memory allocation failed
-  }
-
-  // format the serialized string
-  snprintf(serialized, len + 4, "+%s\r\n", str);
-
-  return serialized;
+  output_buf[0] = '+';
+  rb_write(rb, 1);
 }
 
-char *serialize_error(const char *str) {
-  if (str == NULL) {
-    return NULL;
+void write_end_simple_string(ring_buffer rb) {
+  char *output_buf;
+  size_t writable_len;
+
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 2) {
+    perror("not enough space in ring buffer to write end simple string.\n");
+    return;
   }
 
-  size_t len = strlen(str);
-
-  char *serialized = (char *)malloc(len + 4);
-  if (serialized == NULL) {
-    return NULL;
-  }
-
-  snprintf(serialized, len + 4, "-%s\r\n", str);
-  return serialized;
+  memcpy(output_buf, crlf, 2);
+  rb_write(rb, 2);
 }
 
-char *serialize_integer(const int val) {
-  // calculate the length of the integer
-  int len = snprintf(NULL, 0, "%d", val);
+void write_begin_error(ring_buffer rb) {
+  // check if there is enough writable space in the ring buffer
+  char *output_buf;
+  size_t writable_len;
 
-  char *serialized = (char *)malloc(len + 4);
-  if (serialized == NULL) {
-    return NULL;
+  // get writable space in the ring buffer
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 1) {
+    perror("not enough space in ring buffer to write begin error.\n");
+    return;
   }
 
-  snprintf(serialized, len + 4, ":%d\r\n", val);
-  return serialized;
+  output_buf[0] = '-';
+  rb_write(rb, 1);
 }
 
-char *serialize_bulk_string(const char *str) {
-  if (str == NULL) {
-    return strdup("$-1\r\n"); // null representation of bulk string
+void write_end_error(ring_buffer rb) {
+  char *output_buf;
+  size_t writable_len;
+
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 2) {
+    perror("not enough space in ring buffer to write end error.\n");
+    return;
   }
 
-  size_t str_len = strlen(str);
-
-  // length of length prefix
-  int prefix_len = snprintf(NULL, 0, "%zu", str_len);
-
-  // total length
-  // 1 ('%s') + prefix_len + 2 ("\r\n") + str_len + 2 ("\r\n") + 1 ("\0")
-  size_t total_len = prefix_len + str_len + 6;
-
-  char *serialized = (char *)malloc(total_len);
-  if (serialized == NULL) {
-    return NULL;
-  }
-
-  snprintf(serialized, total_len, "$%zu\r\n%s\r\n", str_len, str);
-  return serialized;
+  memcpy(output_buf, crlf, 2);
+  rb_write(rb, 2);
 }
 
-char *serialize_array(const char **arr, int count) {
-  if (arr == NULL) {
-    return strdup("*-1\r\n");
+void write_begin_integer(ring_buffer rb) {
+  // check if there is enough writable space in the ring buffer
+  char *output_buf;
+  size_t writable_len;
+
+  // get writable space in the ring buffer
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 1) {
+    perror("not enough space in ring buffer to write begin integer.\n");
+    return;
   }
 
-  // total length for the serialized array
-  size_t total_len = 1 + snprintf(NULL, 0, "%d", count) + 2;
-  for (int i = 0; i < count; i++) {
-    const char *str = arr[i];
-    if (str == NULL) {
-      total_len += 5; // for "$-1\r\n"
-    } else {
-      size_t str_len = strlen(str);
-      // 1 for "$", length of str_len, 2 for "\r\n", str_len, 2 for last "\r\n"
-      total_len += 1 + snprintf(NULL, 0, "%zu", str_len) + 2 + str_len + 2;
-    }
-  }
-
-  // allocate memory for the serialized array
-  char *serialized = (char *)malloc(total_len + 1); // + 1 for null terminator
-  if (serialized == NULL) {
-    return NULL;
-  }
-
-  // serialize
-  char *current = serialized;
-
-  current += sprintf(current, "*%d\r\n", count);
-  for (int i = 0; i < count; i++) {
-    const char *str = arr[i];
-    if (str == NULL) {
-      memcpy(current, "$-1\r\n", 5);
-      current += 5;
-    } else {
-      char *serialized_element = serialize_bulk_string(arr[i]);
-      size_t elem_len = strlen(serialized_element);
-      memcpy(current, serialized_element, elem_len);
-      current += elem_len;
-      free(serialized_element);
-    }
-  }
-
-  *current = '\0'; // null terminate the string
-  return serialized;
+  output_buf[0] = ':';
+  rb_write(rb, 1);
 }
 
-// "*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n”
-// a command is an array of bulk strings
-char **deserialize_command(const char *input, int *count) {
-  if (strncmp(input, "PING", 4) == 0) {
-    *count = 1;
-    char **result = (char **)malloc(sizeof(char *));
-    if (result == NULL) {
-      return NULL;
-    }
-    result[0] = strdup("PING");
-    return result;
+void write_end_integer(ring_buffer rb) {
+  char *output_buf;
+  size_t writable_len;
+
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 2) {
+    perror("not enough space in ring buffer to write end integer.\n");
+    return;
   }
 
-  if (input == NULL || input[0] != '*') {
-    *count = 0;
-    return NULL; // not an array, invalid command
+  memcpy(output_buf, crlf, 2);
+  rb_write(rb, 2);
+}
+
+void write_begin_bulk_string(ring_buffer rb, int64_t len) {
+  char *output_buf;
+  size_t writable_len;
+
+  int needed_length = snprintf(NULL, 0, "$%ld", len);
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 ||
+      writable_len < needed_length + (len != -1 ? 2 : 0)) {
+    perror("not enough space in ring buffer to write begin builk string.");
+    return;
   }
 
-  // parse the number of elements in the array
-  *count = atoi(input + 1);
-  char **result = (char **)malloc(*count * sizeof(char *));
-  if (result == NULL) {
-    return NULL;
+  // write the length prefixed by $
+  snprintf(output_buf, writable_len, "$%ld", len);
+
+  rb_write(rb, needed_length);
+  if (len != -1) {
+    memcpy(output_buf + needed_length, crlf, 2);
+    rb_write(rb, 2);
+  }
+}
+
+void write_end_bulk_string(ring_buffer rb) {
+  char *output_buf;
+  size_t writable_len;
+
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < 2) {
+    perror("not enough space in ring buffer to write end integer.\n");
+    return;
   }
 
-  const char *current = input + 4;
-  for (int i = 0; i < *count; i++) {
-    if (current[0] != '$') {
-      // expected a bulk string, but did not find one
-      for (int j = 0; j < i; j++)
-        free(result[j]);
-      free(result);
-      *count = 0;
-      return NULL;
-    }
+  memcpy(output_buf, crlf, 2);
+  rb_write(rb, 2);
+}
 
-    // parse the length of the bulk string
-    int len = atoi(current + 1);
-    current = strchr(current, '\n') + 1;
+void write_begin_array(ring_buffer rb, int64_t len) {
+  char *output_buf;
+  size_t writable_len;
 
-    if (len == -1) {
-      // this is a null bulk string
-      result[i] = NULL;
-    } else {
-      // allocate memory for this string and copy it
-      result[i] = (char *)malloc(len + 1);
-      if (result[i] == NULL) {
-        for (int j = 0; j < i; j++)
-          free(result[j]);
-        free(result);
-        *count = 0;
-        return NULL;
+  // calculate the needed length for the array header
+  int needed_length = snprintf(NULL, 0, "*%ld\r\n", len);
+
+  // check if there is enough writable space in the ring buffer
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < needed_length) {
+    perror("not enough space in ring buffer to write begin array.\n");
+    return;
+  }
+
+  // write the length prefixed by '*'
+  snprintf(output_buf, writable_len, "*%ld\r\n", len);
+
+  // update the write index for the length
+  rb_write(rb, needed_length);
+}
+
+void write_end_array(ring_buffer rb) {
+  // no specific end marker for arrays
+  return;
+}
+
+void write_chars(ring_buffer rb, const char *str) {
+  char *output_buf;
+  size_t writable_len;
+
+  size_t str_length = strlen(str);
+
+  if (rb_writable(rb, &output_buf, &writable_len) != 0 || writable_len < str_length) {
+    perror("Not enough space in ring buffer to write string.\n");
+  }
+
+  memcpy(output_buf, str, str_length);
+
+  rb_write(rb, str_length);
+}
+
+ParseResult parse_initial(Parser *parser, const char *begin, const char *end);
+ParseResult parse_simple(Parser *parser, const char *begin, const char *end);
+ParseResult parse_length(Parser *parser, const char *begin, const char *end);
+ParseResult parse_bulk_string(Parser *parser, const char *begin, const char *end);
+ParseResult parse_array(Parser *parser, const char *begin, const char *end);
+ParseResult parse_inline_command(Parser *parser, const char *begin, const char *end);
+
+void parser_init(Parser *parser, Handler *handler, CommandHandler *command_handler) {
+  parser->handler = handler;
+  parser->command_handler = command_handler;
+  parser->stack_top = 0;
+  parser->stack[0] = (StateInfo){STATE_INITIAL_TERMINAL, 0, parse_initial};
+}
+
+void push_state(Parser *parser, ParserState state, int64_t length, ParseFunc parse_func,
+                void (*end_callback)(CommandHandler *)) {
+  if (parser->stack_top < MAX_STACK_DEPTH - 1) {
+    parser->stack_top++;
+    parser->stack[parser->stack_top] = (StateInfo){state, length, parse_func, end_callback};
+  }
+}
+
+void pop_state(Parser *parser) {
+  if (parser->stack_top > 0) {
+    parser->stack_top--;
+  }
+}
+
+const char *parser_parse(Parser *parser, const char *begin, const char *end) {
+  bool keep_going = true;
+  while (keep_going) {
+    ParseResult result = parser->stack[parser->stack_top].parse(parser, begin, end);
+    keep_going = result.keep_going;
+    begin = result.new_begin;
+  }
+  return begin;
+}
+
+ParseResult parse_initial(Parser *parser, const char *begin, const char *end) {
+  if (begin == end) return (ParseResult){false, begin};
+
+  // check if this is a non-terminal initial state (i.e., not STATE_INITIAL_TERMINAL)
+  ParserState current_state = parser->stack[parser->stack_top].type;
+  if (current_state == STATE_INITIAL) {
+    // if it is a non-terminal initial state
+    // pop it off the stack before processing the next element
+    pop_state(parser);
+  }
+
+  switch (*begin) {
+  case '+':
+    parser->handler->begin_simple_string(parser->command_handler);
+    push_state(parser, STATE_SIMPLE, 0, parse_simple, parser->handler->end_simple_string);
+    break;
+  case '-':
+    parser->handler->begin_error(parser->command_handler);
+    push_state(parser, STATE_SIMPLE, 0, parse_simple, parser->handler->end_error);
+    break;
+  case ':':
+    push_state(parser, STATE_SIMPLE, 0, parse_simple, parser->handler->end_integer);
+    parser->handler->begin_integer(parser->command_handler);
+    break;
+  case '$':
+    push_state(parser, STATE_BULK_STRING_LENGTH, 0, parse_length, parser->handler->end_bulk_string);
+    // don't call begin_bulk_string yet, we need the length first
+    break;
+  case '*':
+    push_state(parser, STATE_ARRAY_LENGTH, 0, parse_length, parser->handler->end_array);
+    // don't call begin_array yet, we need the length first
+    break;
+
+  default:
+    push_state(parser, STATE_INLINE_COMMAND, 0, parse_inline_command, NULL);
+    return (ParseResult){true, begin};
+  }
+  return (ParseResult){true, begin + 1};
+}
+
+ParseResult parse_simple(Parser *parser, const char *begin, const char *end) {
+  if (begin == end) return (ParseResult){false, begin};
+
+  const char *pos = begin;
+  while (pos < end && *pos != cr) {
+    pos++;
+  }
+
+  // process the characters up to CR
+  parser->handler->chars(parser->command_handler, begin, pos);
+
+  if (end - pos < 2) {
+    return (ParseResult){false, pos};
+  } else if (pos[1] == lf) { // found end of the message
+    parser->stack[parser->stack_top].end_callback(parser->command_handler);
+    pop_state(parser);                   // remove current state
+    return (ParseResult){true, pos + 2}; // move past \r\n
+  } else {
+    // handle error, carraige return without newline
+    return (ParseResult){false, pos};
+  }
+}
+
+ParseResult parse_length(Parser *parser, const char *begin, const char *end) {
+  if (begin == end) return (ParseResult){false, begin};
+
+  int64_t length = 0;
+
+  // will store the first character not converted into part of the length
+  char *end_ptr;
+
+  errno = 0;
+  length = strtol(begin, &end_ptr, 10);
+
+  if (end_ptr == begin || end_ptr >= end - 1 || errno != 0) {
+    return (ParseResult){false, begin};
+  }
+
+  if (end_ptr[0] != '\r' || end_ptr[1] != '\n') {
+    return (ParseResult){false, begin};
+  }
+
+  // check if the length can fit in an int
+  if (length > INT_MAX || length < INT_MIN) {
+    return (ParseResult){false, begin};
+  }
+
+  int int_length = (int)length;
+
+  if (parser->stack[parser->stack_top].type == STATE_ARRAY_LENGTH) {
+    // remove the length state
+    pop_state(parser);
+    parser->handler->begin_array(parser->command_handler, int_length);
+    push_state(parser, STATE_ARRAY, int_length, parse_array, parser->handler->end_array);
+  } else if (parser->stack[parser->stack_top].type == STATE_BULK_STRING_LENGTH) {
+    // remove the length state
+    pop_state(parser);
+    parser->handler->begin_bulk_string(parser->command_handler, int_length);
+    push_state(parser, STATE_BULK_STRING, int_length, parse_bulk_string,
+               parser->handler->end_bulk_string);
+  } else {
+    // unexpected state
+    return (ParseResult){false, begin};
+  }
+
+  return (ParseResult){true, end_ptr + 2}; // move past CRLF
+}
+
+// returns the minimum of two values
+int min(int64_t a, int64_t b) { return a <= b ? a : b; }
+
+ParseResult parse_bulk_string(Parser *parser, const char *begin, const char *end) {
+  int64_t length = parser->stack[parser->stack_top].length;
+
+  if (length == -1) {
+    parser->handler->end_bulk_string(parser->command_handler);
+    pop_state(parser);
+    return (ParseResult){true, begin};
+  }
+
+  if (begin == end) {
+    return (ParseResult){false, begin};
+  }
+
+  int64_t input_length = end - begin;
+  int64_t output_length = min(length, input_length);
+  parser->handler->chars(parser->command_handler, begin, begin + output_length);
+  length -= output_length;
+
+  if (length == 0 && input_length >= output_length + 2) {
+    parser->handler->end_bulk_string(parser->command_handler);
+    pop_state(parser);
+    return (ParseResult){true, begin + output_length + 2};
+  } else {
+    return (ParseResult){false, begin + output_length};
+  }
+}
+
+ParseResult parse_array(Parser *parser, const char *begin, const char *end) {
+  int64_t length = parser->stack[parser->stack_top].length;
+
+  if (length == 0 || length == -1) {
+    parser->handler->end_array(parser->command_handler);
+    pop_state(parser);
+    return (ParseResult){true, begin};
+  }
+  parser->stack[parser->stack_top].length--;
+  push_state(parser, STATE_INITIAL, 0, parse_initial, NULL);
+  return (ParseResult){true, begin};
+}
+
+size_t count_tokens(const char *str) {
+  size_t token_count = 0;
+  int in_token = 0;
+  int quote_char = 0;
+
+  while (*str) {
+    // inside quotes
+    if (quote_char) {
+      if (*str == quote_char) {
+        quote_char = 0; // exit quotes
       }
-      strncpy(result[i], current, len);
-      result[i][len] = '\0'; // null terminate
-
-      current += len + 2; // skip past the string and the "\r\n"
+    } else if (*str == '\'' || *str == '"') {
+      quote_char = *str; // enter quotes
+      if (!in_token) {
+        token_count++;
+        in_token = 1;
+      }
+    } else if (*str == ' ') {
+      in_token = 0;
+    } else if (!in_token) {
+      token_count++;
+      in_token = 1;
     }
+    str++;
   }
 
-  return result;
+  return token_count;
 }
 
-void free_command(char **command, int count) {
-  for (int i = 0; i < count; i++) {
-    free(command[i]);
+ParseResult parse_inline_command(Parser *parser, const char *begin, const char *end) {
+  if (begin == end) return (ParseResult){false, begin};
+
+  const char *pos = begin;
+  while (pos < end && *pos != '\r') {
+    pos++;
   }
-  free(command);
+
+  if (pos != end) {
+    size_t token_count = count_tokens(begin); // count tokens
+    parser->handler->begin_array(parser->command_handler, token_count);
+
+    // process characters up to CR
+    const char *token_start = begin;
+    const char *token_end;
+    char quote_char = 0;
+
+    while (token_start < pos) {
+      // skip leading spaces
+      while (token_start < pos && *token_start == ' ') {
+        token_start++;
+      }
+      if (token_start >= pos) break;
+
+      if (*token_start == '"' || *token_start == '\'') {
+        quote_char = *token_start;
+        token_start++; // move past the openng quote
+        token_end = memchr(token_start, quote_char, pos - token_start);
+        if (!token_end) {
+          token_end = pos; // if no closing quote, use the end of the command
+        }
+      } else {
+        token_end = memchr(token_start, ' ', pos - token_start);
+        if (!token_end) token_end = pos;
+      }
+
+      size_t token_length = token_end - token_start;
+      parser->handler->begin_bulk_string(parser->command_handler, token_length);
+      parser->handler->chars(parser->command_handler, token_start, token_end);
+      parser->handler->end_bulk_string(parser->command_handler);
+
+      token_start = (token_end < pos) ? token_end + 1 : token_end;
+
+      if (quote_char) {
+        token_start++; // move past the closing quote
+        quote_char = 0;
+      }
+    }
+
+    parser->handler->end_array(parser->command_handler);
+    pop_state(parser);
+    return (ParseResult){true, pos + 2};
+  } else {
+    return (ParseResult){false, begin};
+  }
 }
+
+void destroy_parser(Parser *parser) { free(parser); }

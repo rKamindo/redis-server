@@ -5,11 +5,17 @@ add_executable(redis_lite
     src/main.c
     src/resp.c
     src/server.c
+    src/command_handler.c
+    src/ring_buffer.c
 )
 
 # GoogleTest requires at least C++14
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 
 include(FetchContent)
 FetchContent_Declare(
