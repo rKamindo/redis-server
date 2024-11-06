@@ -7,7 +7,7 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
-#include <time.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "client.h"
@@ -25,7 +25,34 @@
 
 khash_t(redis_hash) * h;
 
-void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type) {
+void parse_set_options(char **args, int args_count, SetOptions *options) {
+  memset(options, 0, sizeof(SetOptions)); // initialize options
+
+  for (int i = 0; i < args_count; i++) {
+    if (strcmp(args[i], "EX") == 0 && i + 1 < args_count) {
+      int seconds = atoi(args[++i]);
+      options->expiration = current_time_millis() + seconds * 1000;
+    } else if (strcmp(args[i], "PX") == 0 && i + 1 < args_count) {
+      int milliseconds = atoi(args[++i]);
+      options->expiration = current_time_millis() + milliseconds;
+    } else if (strcmp(args[i], "EXAT") == 0 && i + 1 < args_count) {
+      options->expiration = atoi(args[++i]) * 1000;
+    } else if (strcmp(args[i], "PXAT") == 0 && i + 1 < args_count) {
+      options->expiration = atoi(args[++i]);
+    } else if (strcmp(args[i], "NX") == 0) {
+      options->nx = 1;
+    } else if (strcmp(args[i], "XX") == 0) {
+      options->xx = 1;
+    } else if (strcmp(args[i], "KEEPTTL") == 0) {
+      options->keepttl = 1;
+    } else if (strcmp(args[i], "GET") == 0) {
+      options->get = 1;
+    }
+  }
+}
+
+void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
+               long long expiration) {
   int ret;
   // attempt to put the key into the hash table
   khiter_t k = kh_put(redis_hash, h, key, &ret);
@@ -33,28 +60,39 @@ void set_value(khash_t(redis_hash) * h, const char *key, const void *value, Valu
     kh_key(h, k) = strdup(key);
   } else { // key present, we're updating an existing entry
     // if the existing value is a string, free it
-    if (kh_value(h, k)->type == TYPE_STRING) {
-      free(kh_value(h, k)->data.str);
-      free(kh_value(h, k));
+    RedisValue *old_value = kh_value(h, k);
+    if (old_value->type == TYPE_STRING) {
+      free(old_value->data.str);
     }
+    free(old_value);
   }
 
   RedisValue *redis_value = malloc(sizeof(RedisValue));
-
-  // set the type of the new value
   redis_value->type = type;
-  kh_value(h, k) = redis_value;
+  redis_value->expiration = expiration;
 
   // handle the value based on its type
   if (type == TYPE_STRING) {
-    kh_value(h, k)->data.str = strdup((char *)value);
+    redis_value->data.str = strdup((char *)value);
   }
+
+  kh_value(h, k) = redis_value;
 }
 
 RedisValue *get_value(khash_t(redis_hash) * h, const char *key) {
   khiter_t k = kh_get(redis_hash, h, key);
   if (k != kh_end(h)) {
-    return kh_value(h, k);
+    RedisValue *value = kh_value(h, k);
+    if (value->expiration > 0 && value->expiration < current_time_millis()) {
+      // key value has expired, remove it
+      if (value->type == TYPE_STRING) {
+        free(value->data.str);
+      }
+      free(value);
+      kh_del(redis_hash, h, k);
+      return NULL;
+    }
+    return value;
   }
   return NULL; // key not found
 }
@@ -110,28 +148,69 @@ void handle_ping(CommandHandler *ch) {
 }
 
 void handle_echo(CommandHandler *ch) {
-  if (ch->arg_count == 2) {
-    add_simple_string_reply(ch->client, ch->args[1]);
-  } else {
+  if (ch->arg_count != 2) {
     add_error_reply(ch->client, "ERR wrong number of arguments for 'echo' command");
+    return;
   }
+  add_simple_string_reply(ch->client, ch->args[1]);
+}
+
+long long current_time_millis() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (long long)(tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
 }
 
 void handle_set(CommandHandler *ch) {
-  if (ch->arg_count > 2) {
-    set_value(h, ch->args[1], ch->args[2], TYPE_STRING);
-    add_simple_string_reply(ch->client, "OK");
-  } else {
+  if (ch->arg_count < 3) {
     add_error_reply(ch->client, "ERR wrong number of arguments for 'set' command");
+    return;
+  }
+
+  SetOptions options = {0};
+  parse_set_options(ch->args + 3, ch->arg_count - 3, &options);
+
+  khiter_t k = kh_get(redis_hash, h, ch->args[1]);
+  int key_exists = (k != kh_end(h)) && kh_exist(h, k);
+
+  if ((options.nx && key_exists) || (options.xx && !key_exists)) {
+    add_null_reply(ch->client);
+    return;
+  }
+
+  RedisValue *existing_value = NULL;
+  if (options.get) {
+    existing_value = get_value(h, ch->args[1]);
+    if (existing_value != NULL) {
+      add_bulk_string_reply(ch->client, existing_value->data.str);
+    } else {
+      add_null_reply(ch->client);
+    }
+  }
+
+  long long expiration = options.expiration;
+  if (options.keepttl && existing_value != NULL) {
+    expiration = existing_value->expiration;
+  }
+
+  set_value(h, ch->args[1], ch->args[2], TYPE_STRING, expiration);
+
+  if (!options.get) {
+    add_simple_string_reply(ch->client, "OK");
   }
 }
 
 void handle_get(CommandHandler *ch) {
+  if (ch->arg_count != 2) {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'get' command");
+    return;
+  }
+
   RedisValue *redis_value = get_value(h, ch->args[1]);
   if (redis_value == NULL) {
     add_null_reply(ch->client);
   } else {
-    add_bulk_string_reply(ch->client, redis_value->data.str); // Send the bulk string reply
+    add_bulk_string_reply(ch->client, redis_value->data.str);
   }
 }
 
