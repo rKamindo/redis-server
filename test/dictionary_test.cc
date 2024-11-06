@@ -103,13 +103,14 @@ TEST_F(DictionaryTest, UpdateExpirationTime) {
   EXPECT_EQ(retrieved_value->expiration, new_expiration);
 }
 
-TEST_F(DictionaryTest, RemoveExpiration) {
+TEST_F(DictionaryTest, RemoveExpirationAndPersist) {
   const char *key = "remove_expiry_key";
   const char *value = "remove_expiry_value";
   long long initial_expiration = current_time_millis() + 1000; // 1 second from now
   set_value(h, key, value, TYPE_STRING, initial_expiration);
 
   set_value(h, key, value, TYPE_STRING, 0); // set without expiration
+  usleep(1100000); // sleep for 1.1 seconds, to verify if key persists after removing expiration
 
   RedisValue *retrieved_value = get_value(h, key);
   ASSERT_NE(retrieved_value, nullptr);
