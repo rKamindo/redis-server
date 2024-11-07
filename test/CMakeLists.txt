@@ -1,3 +1,5 @@
+include_directories(${CMAKE_SOURCE_DIR}/src)
+
 add_executable(resp_test 
     resp_test.cc 
     ${CMAKE_SOURCE_DIR}/src/resp.c
@@ -13,6 +15,9 @@ dictionary_test.cc
     ${CMAKE_SOURCE_DIR}/src/resp.c
     ${CMAKE_SOURCE_DIR}/src/ring_buffer.c
     ${CMAKE_SOURCE_DIR}/src/command_handler.c
+    ${CMAKE_SOURCE_DIR}/src/database.c
+    ${CMAKE_SOURCE_DIR}/src/client.c
+    ${CMAKE_SOURCE_DIR}/src/commands.c
 )
 
 target_link_libraries(

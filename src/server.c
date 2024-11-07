@@ -1,6 +1,5 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,318 +11,15 @@
 
 #include "client.h"
 #include "command_handler.h"
-#include "handler.h"
-#include "khash.h"
+#include "database.h"
 #include "resp.h"
-#include "ring_buffer.h"
 #include "server.h"
 #include <errno.h>
 
 #define DEFAULT_PORT 6379
-#define RING_BUFFER_SIZE 65536
 #define MAX_EVENTS 10000
 
-khash_t(redis_hash) * h;
-
-void parse_set_options(char **args, int args_count, SetOptions *options) {
-  memset(options, 0, sizeof(SetOptions)); // initialize options
-
-  for (int i = 0; i < args_count; i++) {
-    if (strcmp(args[i], "EX") == 0 && i + 1 < args_count) {
-      int seconds = atoi(args[++i]);
-      options->expiration = current_time_millis() + seconds * 1000;
-    } else if (strcmp(args[i], "PX") == 0 && i + 1 < args_count) {
-      int milliseconds = atoi(args[++i]);
-      options->expiration = current_time_millis() + milliseconds;
-    } else if (strcmp(args[i], "EXAT") == 0 && i + 1 < args_count) {
-      options->expiration = atoi(args[++i]) * 1000;
-    } else if (strcmp(args[i], "PXAT") == 0 && i + 1 < args_count) {
-      options->expiration = atoi(args[++i]);
-    } else if (strcmp(args[i], "NX") == 0) {
-      options->nx = 1;
-    } else if (strcmp(args[i], "XX") == 0) {
-      options->xx = 1;
-    } else if (strcmp(args[i], "KEEPTTL") == 0) {
-      options->keepttl = 1;
-    } else if (strcmp(args[i], "GET") == 0) {
-      options->get = 1;
-    }
-  }
-}
-
-void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
-               long long expiration) {
-  int ret;
-  // attempt to put the key into the hash table
-  khiter_t k = kh_put(redis_hash, h, key, &ret);
-  if (ret == 1) { // key not present
-    kh_key(h, k) = strdup(key);
-  } else { // key present, we're updating an existing entry
-    // if the existing value is a string, free it
-    RedisValue *old_value = kh_value(h, k);
-    if (old_value->type == TYPE_STRING) {
-      free(old_value->data.str);
-    }
-    free(old_value);
-  }
-
-  RedisValue *redis_value = malloc(sizeof(RedisValue));
-  redis_value->type = type;
-  redis_value->expiration = expiration;
-
-  // handle the value based on its type
-  if (type == TYPE_STRING) {
-    redis_value->data.str = strdup((char *)value);
-  }
-
-  kh_value(h, k) = redis_value;
-}
-
-RedisValue *get_value(khash_t(redis_hash) * h, const char *key) {
-  khiter_t k = kh_get(redis_hash, h, key);
-  if (k != kh_end(h)) {
-    RedisValue *value = kh_value(h, k);
-    if (value->expiration > 0 && value->expiration < current_time_millis()) {
-      // key value has expired, remove it
-      if (value->type == TYPE_STRING) {
-        free(value->data.str);
-      }
-      free(value);
-      kh_del(redis_hash, h, k);
-      return NULL;
-    }
-    return value;
-  }
-  return NULL; // key not found
-}
-
-void cleanup_hash(khash_t(redis_hash) * h) {
-  for (khiter_t k = kh_begin(h); k != kh_end(h); k++) {
-    if (kh_exist(h, k)) {
-      free((char *)kh_key(h, k)); // free the key
-      RedisValue *rv = kh_value(h, k);
-      if (rv->type == TYPE_STRING) {
-        free(rv->data.str); // free the string data
-      }
-      free(rv);
-    }
-  }
-  kh_destroy(redis_hash, h);
-}
-
-void add_simple_string_reply(Client *client, const char *str) {
-  write_begin_simple_string(client->output_buffer);
-  write_chars(client->output_buffer, str);
-  write_end_simple_string(client->output_buffer);
-}
-
-void add_bulk_string_reply(Client *client, const char *str) {
-  // Assuming you have a function that calculates the length of the string
-  int64_t len = strlen(str);
-  write_begin_bulk_string(client->output_buffer, len);
-  write_chars(client->output_buffer, str);
-  write_end_bulk_string(client->output_buffer);
-}
-
-void add_null_reply(Client *client) {
-  write_begin_bulk_string(client->output_buffer, -1); // Indicate that this is a null bulk string
-  // No actual data to write since it's null
-  write_end_bulk_string(client->output_buffer);
-}
-
-void add_error_reply(Client *client, const char *str) {
-  write_begin_error(client->output_buffer);
-  write_chars(client->output_buffer, str);
-  write_end_error(client->output_buffer);
-}
-
-void handle_ping(CommandHandler *ch) {
-  if (ch->arg_count == 1) {
-    add_simple_string_reply(ch->client, "PONG");
-  } else if (ch->arg_count == 2) {
-    add_simple_string_reply(ch->client, ch->args[1]);
-  } else {
-    add_error_reply(ch->client, "ERR wrong number of arguments for 'ping' command");
-  }
-}
-
-void handle_echo(CommandHandler *ch) {
-  if (ch->arg_count != 2) {
-    add_error_reply(ch->client, "ERR wrong number of arguments for 'echo' command");
-    return;
-  }
-  add_simple_string_reply(ch->client, ch->args[1]);
-}
-
-long long current_time_millis() {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return (long long)(tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
-}
-
-void handle_set(CommandHandler *ch) {
-  if (ch->arg_count < 3) {
-    add_error_reply(ch->client, "ERR wrong number of arguments for 'set' command");
-    return;
-  }
-
-  SetOptions options = {0};
-  parse_set_options(ch->args + 3, ch->arg_count - 3, &options);
-
-  khiter_t k = kh_get(redis_hash, h, ch->args[1]);
-  int key_exists = (k != kh_end(h)) && kh_exist(h, k);
-
-  if ((options.nx && key_exists) || (options.xx && !key_exists)) {
-    add_null_reply(ch->client);
-    return;
-  }
-
-  RedisValue *existing_value = NULL;
-  if (options.get) {
-    existing_value = get_value(h, ch->args[1]);
-    if (existing_value != NULL) {
-      add_bulk_string_reply(ch->client, existing_value->data.str);
-    } else {
-      add_null_reply(ch->client);
-    }
-  }
-
-  long long expiration = options.expiration;
-  if (options.keepttl && existing_value != NULL) {
-    expiration = existing_value->expiration;
-  }
-
-  set_value(h, ch->args[1], ch->args[2], TYPE_STRING, expiration);
-
-  if (!options.get) {
-    add_simple_string_reply(ch->client, "OK");
-  }
-}
-
-void handle_get(CommandHandler *ch) {
-  if (ch->arg_count != 2) {
-    add_error_reply(ch->client, "ERR wrong number of arguments for 'get' command");
-    return;
-  }
-
-  RedisValue *redis_value = get_value(h, ch->args[1]);
-  if (redis_value == NULL) {
-    add_null_reply(ch->client);
-  } else {
-    add_bulk_string_reply(ch->client, redis_value->data.str);
-  }
-}
-
-typedef enum { CMD_PING, CMD_ECHO, CMD_SET, CMD_GET, CMD_UNKNOWN } CommandType;
-
-CommandType get_command_type(char *command) {
-  if (strcmp(command, "PING") == 0)
-    return CMD_PING;
-  else if (strcmp(command, "ECHO") == 0)
-    return CMD_ECHO;
-  else if (strcmp(command, "SET") == 0)
-    return CMD_SET;
-  else if (strcmp(command, "GET") == 0)
-    return CMD_GET;
-  else
-    return CMD_UNKNOWN;
-}
-
-void handle_command(CommandHandler *ch) {
-
-  CommandType command_type = get_command_type(ch->args[0]);
-
-  switch (command_type) {
-  case CMD_PING:
-    handle_ping(ch);
-    break;
-  case CMD_ECHO:
-    handle_echo(ch);
-    break;
-  case CMD_SET:
-    handle_set(ch);
-    break;
-  case CMD_GET:
-    handle_get(ch);
-    break;
-  default:
-    add_error_reply(ch->client, "ERR unknown command");
-    break;
-  }
-}
-
-void flush_output_buffer(Client *client) {
-  char *output_buf;
-  size_t readable_len;
-
-  // get the readable portion of the ring buffer
-  while (1) {
-    if (rb_readable(client->output_buffer, &output_buf, &readable_len) != 0) {
-      fprintf(stderr, "Failed to get readable buffer\n");
-      return;
-    }
-
-    if (readable_len == 0) {
-      // no more data to send
-      break;
-    }
-
-    ssize_t bytes_sent = write(client->fd, output_buf, readable_len);
-
-    if (bytes_sent < 0) {
-      if (errno == EINTR) {
-        continue; // Interrupted system call, retry
-      } else if (errno == EWOULDBLOCK) {
-        // Socket would block; exit the loop
-        break;
-      } else {
-        perror("Failed to send data to client");
-        return; // Handle error appropriately
-      }
-    } else if (bytes_sent == 0) {
-      // No bytes sent; this may indicate that the socket is not ready.
-      break; // Exit if nothing was sent
-    }
-
-    rb_read(client->output_buffer, bytes_sent);
-  }
-}
-
-Client *create_client(int fd, Handler *handler) {
-  Client *client = malloc(sizeof(Client));
-  if (!client) return NULL;
-
-  client->fd = fd;
-
-  // create a ring buffer of 64KB (adjust size as needed)
-  if (rb_create(RING_BUFFER_SIZE, &client->input_buffer) != 0 ||
-      rb_create(RING_BUFFER_SIZE, &client->output_buffer) != 0) {
-    free(client);
-    return NULL;
-  }
-
-  client->parser = malloc(sizeof(Parser));
-  if (!client->parser) {
-    rb_destroy(client->input_buffer);
-    rb_destroy(client->output_buffer);
-    free(client);
-    return NULL;
-  }
-
-  int buffer_size = 1 << 20; // 1MB
-  setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
-
-  return client;
-}
-
-void client_free(Client *client) {
-  close(client->fd);
-  rb_destroy(client->input_buffer);
-  free(client->parser);
-  free(client);
-}
-
-void client_on_readable(Client *client) {
+void process_client_input(Client *client) {
   for (;;) {
 
     char *write_buf;
@@ -348,7 +44,7 @@ void client_on_readable(Client *client) {
       if (errno == EINTR) {
         continue;
       } else if (errno == EWOULDBLOCK) {
-        flush_output_buffer(client);
+        flush_client_output(client);
         return;
       } else {
         perror("failed to read from client socket");
@@ -357,7 +53,7 @@ void client_on_readable(Client *client) {
     case 0:
       fprintf(stderr, "client disconnected\n");
 
-      close(client->fd); // Close the socket
+      close(client->fd); // close the socket
       destroy_command_handler(client->parser->command_handler);
       destroy_parser(client->parser);
       return;
@@ -389,7 +85,7 @@ void client_on_readable(Client *client) {
     }
 
     if (bytes_received < writable_len) {
-      flush_output_buffer(client);
+      flush_client_output(client);
       return;
     }
   }
@@ -403,8 +99,7 @@ int start_server() {
   // register the signal handler
   signal(SIGINT, sigint_handler);
 
-  // initialize the hash table
-  h = kh_init(redis_hash);
+  redis_db_create();
 
   struct sockaddr_in sa;
   int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -496,12 +191,12 @@ int start_server() {
         }
       } else if (events[i].events & EPOLLIN) {
         Client *client = (Client *)current_event->data.ptr;
-        client_on_readable(client);
+        process_client_input(client);
       } else if (events[i].events & EPOLLHUP | EPOLLERR) {
         Client *client = (Client *)current_event->data.ptr;
         destroy_command_handler(client->parser->command_handler);
         destroy_parser(client->parser);
-        client_free(current_event->data.ptr);
+        destroy_client(current_event->data.ptr);
         epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
       } else {
         fprintf(stderr, "Unexpected event type: %d\n", events[i].events);
@@ -514,7 +209,7 @@ int start_server() {
   }
   close(epfd);
   close(SocketFD);
-  cleanup_hash(h);
+  redis_db_destroy();
   destroy_handler(handler);
   return EXIT_SUCCESS;
 }
