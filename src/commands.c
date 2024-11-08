@@ -51,6 +51,7 @@ int parse_set_options(char **args, int args_count, SetOptions *options) {
       options->get = 1;
       // check for the "KEEPTTL" option (keep the time-to-live of the key)
     } else if (strcmp(args[i], "KEEPTTL") == 0) {
+      if (options->expiration) return ERR_SYNTAX;
       options->keepttl = 1;
       // check for the "EX" option (set expiration time in seconds)
     } else if (strcmp(args[i], "EX") == 0 && i + 1 < args_count) {
