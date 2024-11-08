@@ -56,7 +56,7 @@ CommandHandler *create_command_handler(Client *client, size_t initial_buf_size,
   }
 
   ch->buf = malloc(initial_buf_size);
-  ch->args = malloc(initial_arg_capacity);
+  ch->args = malloc(sizeof(char *) * initial_arg_capacity);
   ch->ends = malloc(sizeof(size_t) * initial_arg_capacity);
 
   if (!ch->buf || !ch->args || !ch->ends) {
@@ -76,20 +76,14 @@ CommandHandler *create_command_handler(Client *client, size_t initial_buf_size,
 
 // Command handler methods
 void begin_array_handler(CommandHandler *ch, int64_t len) {
-  // clear the buffer
   ch->buf_used = 0;
-  memset(ch->buf, 0, ch->buf_size);
-  // clear the args
   ch->arg_count = 0;
-  memset(ch->args, 0, ch->arg_capacity);
-  // clear the ends array
   ch->ends_size = 0;
-  memset(ch->ends, 0, ch->arg_capacity * sizeof(size_t));
 
   // ensure args array has enough capacity
   if (len > ch->arg_capacity) {
     ch->arg_capacity = len;
-    ch->args = realloc(ch->args, ch->arg_capacity);
+    ch->args = realloc(ch->args, sizeof(char *) * len);
     if (ch->args == NULL) {
       perror("memory realloc failed for args array");
       exit(EXIT_FAILURE);
@@ -99,9 +93,9 @@ void begin_array_handler(CommandHandler *ch, int64_t len) {
   // ensure ends array has enough capacity
   if (len > ch->ends_capacity) {
     ch->ends_capacity = len;
-    ch->ends = realloc(ch->ends, sizeof(size_t) * ch->ends_capacity);
+    ch->ends = realloc(ch->ends, sizeof(size_t) * len);
     if (ch->ends == NULL) {
-      perror("memorry realloc failed for ends array");
+      perror("memory realloc failed for ends array");
       exit(EXIT_FAILURE);
     }
   }
@@ -127,6 +121,11 @@ void end_array_handler(CommandHandler *ch) {
 
   // execute the command
   handle_command(ch);
+
+  // free memory allocated for arguments
+  for (int i = 0; i < ch->arg_count; i++) {
+    free(ch->args[i]);
+  }
 }
 
 void begin_bulk_string_handler(CommandHandler *ch, int64_t len) {
@@ -184,11 +183,8 @@ Handler *create_handler() {
 
 void destroy_command_handler(CommandHandler *ch) {
   if (ch) {
-    free(ch->buf);
-    for (size_t i = 0; i < ch->arg_count; i++) {
-      free(ch->args[i]);
-    }
     free(ch->args);
+    free(ch->buf);
     free(ch->ends);
     free(ch);
   }
