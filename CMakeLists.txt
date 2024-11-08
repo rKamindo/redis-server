@@ -9,6 +9,7 @@ add_executable(redis_lite
     src/command_handler.c
     src/commands.c
     src/ring_buffer.c
+    src/util.c
     src/database.c
 )
 

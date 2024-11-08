@@ -17,6 +17,7 @@ dictionary_test.cc
     ${CMAKE_SOURCE_DIR}/src/database.c
     ${CMAKE_SOURCE_DIR}/src/client.c
     ${CMAKE_SOURCE_DIR}/src/commands.c
+    ${CMAKE_SOURCE_DIR}/src/util.c
 )
 
 target_link_libraries(

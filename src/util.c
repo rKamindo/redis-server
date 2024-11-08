@@ -1,6 +1,6 @@
+#include "util.h"
 #include <errno.h>
 #include <sys/time.h>
-#include <util.h>
 
 long long current_time_millis() {
   struct timeval tv;
