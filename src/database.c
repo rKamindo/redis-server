@@ -3,12 +3,6 @@
 
 khash_t(redis_hash) * h;
 
-long long current_time_millis() {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return (long long)(tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
-}
-
 void create_redis_hash_table() {
   // initialize the hash table
   h = kh_init(redis_hash);

@@ -2,6 +2,7 @@
 #include "command_handler.h"
 #include "database.h"
 #include "sys/time.h"
+#include "util.h"
 #include <errno.h>
 #include <stddef.h>
 
@@ -29,23 +30,6 @@ void add_error_reply(Client *client, const char *str) {
   write_begin_error(client->output_buffer);
   write_chars(client->output_buffer, str);
   write_end_error(client->output_buffer);
-}
-
-#define ERR_SYNTAX -1
-#define ERR_OTHER -2
-
-int parse_integer(const char *str, long *result) {
-  char *endptr;
-  errno = 0;
-  long value = strtol(str, &endptr, 10);
-
-  // check if the conversion was successful and if the value is within range
-  if (endptr == str || *endptr != '\0' || errno == ERANGE || value < 0) {
-    return ERR_OTHER; // return error code for non-integer or out of range
-  }
-
-  *result = value;
-  return 0;
 }
 
 /*
@@ -143,7 +127,7 @@ void handle_set(CommandHandler *ch) {
   case ERR_SYNTAX:
     add_error_reply(ch->client, "ERR syntax error");
     return;
-  case ERR_OTHER:
+  case ERR_VALUE:
     add_error_reply(ch->client, "ERR value is not an integer or out of range");
     return;
   }
