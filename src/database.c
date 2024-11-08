@@ -22,8 +22,8 @@ void destroy_redis_hash(khash_t(redis_hash) * h) {
   kh_destroy(redis_hash, h);
 }
 
-void set_value(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
-               long long expiration) {
+static void set(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
+                long long expiration) {
   int ret;
   // attempt to put the key into the hash table
   khiter_t k = kh_put(redis_hash, h, key, &ret);
@@ -50,7 +50,7 @@ void set_value(khash_t(redis_hash) * h, const char *key, const void *value, Valu
   kh_value(h, k) = redis_value;
 }
 
-RedisValue *get_value(khash_t(redis_hash) * h, const char *key) {
+static RedisValue *get(khash_t(redis_hash) * h, const char *key) {
   khiter_t k = kh_get(redis_hash, h, key);
   if (k != kh_end(h)) {
     RedisValue *value = kh_value(h, k);
@@ -72,7 +72,7 @@ void redis_db_create() { create_redis_hash_table(); }
 void redis_db_destroy() { destroy_redis_hash(h); }
 
 void redis_db_set(const char *key, const char *value, ValueType type, long long expiration) {
-  set_value(h, key, value, type, expiration);
+  set(h, key, value, type, expiration);
 }
 
-RedisValue *redis_db_get(const char *key) { return get_value(h, key); }
+RedisValue *redis_db_get(const char *key) { return get(h, key); }
