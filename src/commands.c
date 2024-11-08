@@ -134,11 +134,15 @@ void handle_set(CommandHandler *ch) {
 
   RedisValue *existing_value = NULL;
   bool key_exists = false;
+  char *old_value = NULL;
 
-  // only get the existing value if we need to check conditions (NX, XX) or respond to GET option
+  // only get the existing value if we need to check conditions (NX, XX) or respond to GET
+  // option
   if (options.nx || options.xx || options.get) {
     existing_value = redis_db_get(ch->args[1]);
-    key_exists = (existing_value != NULL);
+    if (existing_value != NULL) {
+      key_exists = true;
+    }
   }
 
   if ((options.nx && key_exists) || (options.xx && !key_exists)) {
@@ -151,11 +155,18 @@ void handle_set(CommandHandler *ch) {
     expiration = existing_value->expiration;
   }
 
+  if (options.get) {
+    if (existing_value) {
+      old_value = strdup(existing_value->data.str); // store the old value
+    }
+  }
+
   redis_db_set(ch->args[1], ch->args[2], TYPE_STRING, expiration);
 
   if (options.get) {
-    if (existing_value != NULL) {
-      add_bulk_string_reply(ch->client, existing_value->data.str);
+    if (old_value) {
+      add_bulk_string_reply(ch->client, old_value);
+      free(old_value);
     } else {
       add_null_reply(ch->client);
     }
