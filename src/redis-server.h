@@ -12,7 +12,7 @@ extern "C" {
 // foward declarations
 struct CommandHandler;
 
-// type definitions
+void handle_client_disconnection(Client *client, int epfd);
 
 int start_server();
 

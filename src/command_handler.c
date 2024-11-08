@@ -7,7 +7,6 @@
 #include "command_handler.h"
 #include "commands.h"
 #include "resp.h"
-#include "server.h"
 
 CommandType get_command_type(char *command) {
   if (strcmp(command, "PING") == 0)

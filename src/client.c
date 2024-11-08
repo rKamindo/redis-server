@@ -37,7 +37,9 @@ Client *create_client(int fd, Handler *handler) {
 void destroy_client(Client *client) {
   close(client->fd);
   rb_destroy(client->input_buffer);
-  free(client->parser);
+  rb_destroy(client->output_buffer);
+  destroy_command_handler(client->parser->command_handler);
+  destroy_parser(client->parser);
   free(client);
 }
 

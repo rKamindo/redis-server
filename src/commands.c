@@ -2,6 +2,7 @@
 #include "command_handler.h"
 #include "database.h"
 #include "sys/time.h"
+#include <errno.h>
 #include <stddef.h>
 
 void add_simple_string_reply(Client *client, const char *str) {
@@ -30,30 +31,85 @@ void add_error_reply(Client *client, const char *str) {
   write_end_error(client->output_buffer);
 }
 
-void parse_set_options(char **args, int args_count, SetOptions *options) {
-  memset(options, 0, sizeof(SetOptions)); // initialize options
+#define ERR_SYNTAX -1
+#define ERR_OTHER -2
 
+int parse_integer(const char *str, long *result) {
+  char *endptr;
+  errno = 0;
+  long value = strtol(str, &endptr, 10);
+
+  // check if the conversion was successful and if the value is within range
+  if (endptr == str || *endptr != '\0' || errno == ERANGE || value < 0) {
+    return ERR_OTHER; // return error code for non-integer or out of range
+  }
+
+  *result = value;
+  return 0;
+}
+
+/*
+Parses the options sent to a SET command, returns 0 if successful, -1 if there is a syntax error
+*/
+int parse_set_options(char **args, int args_count, SetOptions *options) {
+
+  // iterate through the arguments provided to the SET command
   for (int i = 0; i < args_count; i++) {
-    if (strcmp(args[i], "EX") == 0 && i + 1 < args_count) {
-      int seconds = atoi(args[++i]);
-      options->expiration = current_time_millis() + seconds * 1000;
-    } else if (strcmp(args[i], "PX") == 0 && i + 1 < args_count) {
-      int milliseconds = atoi(args[++i]);
-      options->expiration = current_time_millis() + milliseconds;
-    } else if (strcmp(args[i], "EXAT") == 0 && i + 1 < args_count) {
-      options->expiration = atoi(args[++i]) * 1000;
-    } else if (strcmp(args[i], "PXAT") == 0 && i + 1 < args_count) {
-      options->expiration = atoi(args[++i]);
-    } else if (strcmp(args[i], "NX") == 0) {
+    // check for the "NX" option (only set if the key does not exist)
+    if (strcmp(args[i], "NX") == 0) {
+      if (options->xx) return ERR_SYNTAX; // NX and XX are mutually exclusive
       options->nx = 1;
+      // check for the "XX" option (only set if the key already exists)
     } else if (strcmp(args[i], "XX") == 0) {
+      if (options->nx) return ERR_SYNTAX; // NX and XX are mutually exclusive
       options->xx = 1;
-    } else if (strcmp(args[i], "KEEPTTL") == 0) {
-      options->keepttl = 1;
     } else if (strcmp(args[i], "GET") == 0) {
       options->get = 1;
+      // check for the "KEEPTTL" option (keep the time-to-live of the key)
+    } else if (strcmp(args[i], "KEEPTTL") == 0) {
+      options->keepttl = 1;
+      // check for the "EX" option (set expiration time in seconds)
+    } else if (strcmp(args[i], "EX") == 0 && i + 1 < args_count) {
+      if (options->expiration || options->keepttl) return ERR_SYNTAX;
+      char *next_arg = args[++i];
+      long seconds;
+      int parse_result = parse_integer(next_arg, &seconds);
+      if (parse_result != 0) { // some error occured, non-integer or out of range error found
+        return parse_result;
+      }
+      options->expiration = current_time_millis() + seconds * 1000;
+    } else if (strcmp(args[i], "PX") == 0 && i + 1 < args_count) {
+      if (options->expiration || options->keepttl) return ERR_SYNTAX;
+      char *next_arg = args[++i];
+      long milliseconds;
+      int parse_result = parse_integer(next_arg, &milliseconds);
+      if (parse_result != 0) { // some error occured, non-integer or out of range error found
+        return parse_result;
+      }
+      options->expiration = current_time_millis() + milliseconds;
+      // check for the "EXAT" option (set absolute expiration time in seconds since epoch)
+    } else if (strcmp(args[i], "EXAT") == 0 && i + 1 < args_count) {
+      if (options->expiration || options->keepttl) return ERR_SYNTAX;
+      char *next_arg = args[++i];
+      long seconds;
+      int parse_result = parse_integer(next_arg, &seconds);
+      if (parse_result != 0) { // some error occured, non-integer or out of range error found
+        return parse_result;
+      }
+      options->expiration = seconds * 1000;
+      // check for the "PXAT" option (set absolute expiration time in milliseconds since epoch)
+    } else if (strcmp(args[i], "PXAT") == 0 && i + 1 < args_count) {
+      if (options->expiration || options->keepttl) return ERR_SYNTAX;
+      char *next_arg = args[++i];
+      long milliseconds;
+      int parse_result = parse_integer(next_arg, &milliseconds);
+      if (parse_result != 0) { // some error occured, non-integer or out of range error found
+        return parse_result;
+      }
+      options->expiration = milliseconds;
     }
   }
+  return 0;
 }
 
 void handle_ping(CommandHandler *ch) {
@@ -81,24 +137,29 @@ void handle_set(CommandHandler *ch) {
   }
 
   SetOptions options = {0};
-  parse_set_options(ch->args + 3, ch->arg_count - 3, &options);
+  int parse_result = parse_set_options(ch->args + 3, ch->arg_count - 3, &options);
 
-  RedisValue *existing_value = redis_db_get(ch->args[1]);
-  int key_exists = (existing_value != NULL);
+  switch (parse_result) {
+  case ERR_SYNTAX:
+    add_error_reply(ch->client, "ERR syntax error");
+    return;
+  case ERR_OTHER:
+    add_error_reply(ch->client, "ERR value is not an integer or out of range");
+    return;
+  }
+
+  RedisValue *existing_value = NULL;
+  bool key_exists = false;
+
+  // only get the existing value if we need to check conditions (NX, XX) or respond to GET option
+  if (options.nx || options.xx || options.get) {
+    existing_value = redis_db_get(ch->args[1]);
+    key_exists = (existing_value != NULL);
+  }
 
   if ((options.nx && key_exists) || (options.xx && !key_exists)) {
     add_null_reply(ch->client);
     return;
-  }
-
-  existing_value = NULL;
-  if (options.get) {
-    existing_value = redis_db_get(ch->args[1]);
-    if (existing_value != NULL) {
-      add_bulk_string_reply(ch->client, existing_value->data.str);
-    } else {
-      add_null_reply(ch->client);
-    }
   }
 
   long long expiration = options.expiration;
@@ -108,7 +169,13 @@ void handle_set(CommandHandler *ch) {
 
   redis_db_set(ch->args[1], ch->args[2], TYPE_STRING, expiration);
 
-  if (!options.get) {
+  if (options.get) {
+    if (existing_value != NULL) {
+      add_bulk_string_reply(ch->client, existing_value->data.str);
+    } else {
+      add_null_reply(ch->client);
+    }
+  } else {
     add_simple_string_reply(ch->client, "OK");
   }
 }

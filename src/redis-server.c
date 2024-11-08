@@ -12,14 +12,14 @@
 #include "client.h"
 #include "command_handler.h"
 #include "database.h"
+#include "redis-server.h"
 #include "resp.h"
-#include "server.h"
 #include <errno.h>
 
 #define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
 
-void process_client_input(Client *client) {
+void process_client_input(Client *client, int epfd) {
   for (;;) {
 
     char *write_buf;
@@ -51,11 +51,8 @@ void process_client_input(Client *client) {
         return;
       }
     case 0:
+      handle_client_disconnection(client, epfd);
       fprintf(stderr, "client disconnected\n");
-
-      close(client->fd); // close the socket
-      destroy_command_handler(client->parser->command_handler);
-      destroy_parser(client->parser);
       return;
     default:
       // update the write index of the ring buffer
@@ -89,6 +86,11 @@ void process_client_input(Client *client) {
       return;
     }
   }
+}
+
+void handle_client_disconnection(Client *client, int epfd) {
+  destroy_client(client);
+  epoll_ctl(epfd, EPOLL_CTL_DEL, client->fd, NULL);
 }
 
 volatile sig_atomic_t stop_server = 0;
@@ -191,13 +193,10 @@ int start_server() {
         }
       } else if (events[i].events & EPOLLIN) {
         Client *client = (Client *)current_event->data.ptr;
-        process_client_input(client);
+        process_client_input(client, epfd);
       } else if (events[i].events & EPOLLHUP | EPOLLERR) {
         Client *client = (Client *)current_event->data.ptr;
-        destroy_command_handler(client->parser->command_handler);
-        destroy_parser(client->parser);
-        destroy_client(current_event->data.ptr);
-        epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
+        handle_client_disconnection(client, epfd);
       } else {
         fprintf(stderr, "Unexpected event type: %d\n", events[i].events);
       }

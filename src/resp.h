@@ -14,7 +14,6 @@ extern "C" {
 
 // forward declarations:
 struct Parser;
-struct ComandHandler;
 struct Handler;
 
 // writes the beginning of a simple string to the ring buffer
