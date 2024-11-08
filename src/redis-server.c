@@ -89,8 +89,8 @@ void process_client_input(Client *client, int epfd) {
 }
 
 void handle_client_disconnection(Client *client, int epfd) {
-  destroy_client(client);
   epoll_ctl(epfd, EPOLL_CTL_DEL, client->fd, NULL);
+  destroy_client(client);
 }
 
 volatile sig_atomic_t stop_server = 0;
