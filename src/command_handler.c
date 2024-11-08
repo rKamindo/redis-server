@@ -5,8 +5,44 @@
 #include <unistd.h>
 
 #include "command_handler.h"
+#include "commands.h"
 #include "resp.h"
-#include "server.h"
+
+CommandType get_command_type(char *command) {
+  if (strcmp(command, "PING") == 0)
+    return CMD_PING;
+  else if (strcmp(command, "ECHO") == 0)
+    return CMD_ECHO;
+  else if (strcmp(command, "SET") == 0)
+    return CMD_SET;
+  else if (strcmp(command, "GET") == 0)
+    return CMD_GET;
+  else
+    return CMD_UNKNOWN;
+}
+
+void handle_command(CommandHandler *ch) {
+
+  CommandType command_type = get_command_type(ch->args[0]);
+
+  switch (command_type) {
+  case CMD_PING:
+    handle_ping(ch);
+    break;
+  case CMD_ECHO:
+    handle_echo(ch);
+    break;
+  case CMD_SET:
+    handle_set(ch);
+    break;
+  case CMD_GET:
+    handle_get(ch);
+    break;
+  default:
+    add_error_reply(ch->client, "ERR unknown command");
+    break;
+  }
+}
 
 CommandHandler *create_command_handler(Client *client, size_t initial_buf_size,
                                        size_t initial_arg_capacity) {
