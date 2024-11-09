@@ -10,5 +10,4 @@
 
 long long current_time_millis();
 int parse_integer(const char *str, long *result);
-
 #endif // UTIL_H

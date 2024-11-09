@@ -169,3 +169,55 @@ TEST_F(CommandTest, DeleteCommand) {
   ExecuteCommand({"GET", "key2"});
   EXPECT_EQ(GetReply(), "$-1\r\n");
 }
+
+TEST_F(CommandTest, IncrCommand) {
+  ExecuteCommand({"SET", "mykey", "10"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"INCR", "mykey"});
+  EXPECT_EQ(GetReply(), ":11\r\n");
+
+  ExecuteCommand({"INCR", "mykey"});
+  EXPECT_EQ(GetReply(), ":12\r\n");
+
+  ExecuteCommand({"GET", "mykey"});
+  EXPECT_EQ(GetReply(), "$2\r\n12\r\n");
+}
+
+TEST_F(CommandTest, IncrNonExistentKey) {
+  ExecuteCommand({"INCR", "key"});
+  EXPECT_EQ(GetReply(), ":1\r\n"); // should initialize and increment to 1
+
+  ExecuteCommand({"GET", "key"});
+  EXPECT_EQ(GetReply(), "$1\r\n1\r\n"); // should return 1
+}
+
+TEST_F(CommandTest, DecrCommand) {
+  ExecuteCommand({"SET", "mykey", "10"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"DECR", "mykey"});
+  EXPECT_EQ(GetReply(), ":9\r\n");
+
+  ExecuteCommand({"DECR", "mykey"});
+  EXPECT_EQ(GetReply(), ":8\r\n");
+
+  ExecuteCommand({"GET", "mykey"});
+  EXPECT_EQ(GetReply(), "$1\r\n8\r\n");
+}
+
+TEST_F(CommandTest, IncrWithInvalidValue) {
+  ExecuteCommand({"SET", "invalid_key", "not_an_integer"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"INCR", "invalid_key"});
+  EXPECT_EQ(GetReply(), "-ERR value is not an integer\r\n");
+}
+
+TEST_F(CommandTest, DecrWithInvalidValue) {
+  ExecuteCommand({"SET", "invalid_key", "not_an_integer"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"DECR", "invalid_key"});
+  EXPECT_EQ(GetReply(), "-ERR value is not an integer\r\n");
+}

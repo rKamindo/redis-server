@@ -225,3 +225,38 @@ void handle_delete(CommandHandler *ch) {
   }
   add_simple_string_reply(ch->client, "OK");
 }
+
+void handle_incr_decr(CommandHandler *ch, int increment) {
+  if (ch->arg_count < 2) {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'incr/decr' command");
+    return;
+  }
+
+  RedisValue *redis_value = redis_db_get(ch->args[1]);
+  long current_value = 0;
+
+  // check if the key exists and parse its value
+  if (redis_value != NULL) {
+    int parse_result = parse_integer(redis_value->data.str, &current_value);
+    if (parse_result == ERR_VALUE) {
+      add_error_reply(ch->client, "ERR value is not an integer");
+      return;
+    }
+  } else {
+    // if the key does not exist, initialize current_value to 0
+    current_value = 0;
+  }
+
+  // calculate the new value based on increment or decrement
+  long new_value = current_value + increment;
+  char new_value_str[21];
+  snprintf(new_value_str, sizeof(new_value_str), "%ld", new_value);
+
+  // set the new value in the database
+  redis_db_set(ch->args[1], new_value_str, TYPE_STRING, 0);
+  add_integer_reply(ch->client, new_value);
+}
+
+void handle_incr(CommandHandler *ch) { handle_incr_decr(ch, 1); }
+
+void handle_decr(CommandHandler *ch) { handle_incr_decr(ch, -1); }
