@@ -16,6 +16,7 @@ void handle_ping(CommandHandler *ch);
 void handle_echo(CommandHandler *ch);
 void handle_set(CommandHandler *ch);
 void handle_get(CommandHandler *ch);
+void handle_exist(CommandHandler *ch);
 
 void add_error_reply(Client *client, const char *str);
 

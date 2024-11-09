@@ -17,6 +17,8 @@ CommandType get_command_type(char *command) {
     return CMD_SET;
   else if (strcmp(command, "GET") == 0)
     return CMD_GET;
+  else if (strcmp(command, "EXIST") == 0)
+    return CMD_EXIST;
   else
     return CMD_UNKNOWN;
 }
@@ -37,6 +39,9 @@ void handle_command(CommandHandler *ch) {
     break;
   case CMD_GET:
     handle_get(ch);
+    break;
+  case CMD_EXIST:
+    handle_exist(ch);
     break;
   default:
     add_error_reply(ch->client, "ERR unknown command");

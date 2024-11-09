@@ -6,7 +6,7 @@ Currently working on improving the performance of this server using a variety of
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
-- Support for basic Redis commands (PING, ECHO, SET (with options), GET)
+- Support for basic Redis commands (PING, ECHO, SET (with options), GET, EXIST)
 - GoogleTest for unit testing
 - CMake for building
 
