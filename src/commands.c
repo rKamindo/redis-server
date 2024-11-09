@@ -5,6 +5,7 @@
 #include "util.h"
 #include <errno.h>
 #include <stddef.h>
+#include <stdio.h>
 
 void add_simple_string_reply(Client *client, const char *str) {
   write_begin_simple_string(client->output_buffer);
@@ -13,7 +14,6 @@ void add_simple_string_reply(Client *client, const char *str) {
 }
 
 void add_bulk_string_reply(Client *client, const char *str) {
-  // Assuming you have a function that calculates the length of the string
   int64_t len = strlen(str);
   write_begin_bulk_string(client->output_buffer, len);
   write_chars(client->output_buffer, str);
@@ -21,8 +21,7 @@ void add_bulk_string_reply(Client *client, const char *str) {
 }
 
 void add_null_reply(Client *client) {
-  write_begin_bulk_string(client->output_buffer, -1); // Indicate that this is a null bulk string
-  // No actual data to write since it's null
+  write_begin_bulk_string(client->output_buffer, -1); // indicate that this is a null bulk string
   write_end_bulk_string(client->output_buffer);
 }
 
@@ -30,6 +29,15 @@ void add_error_reply(Client *client, const char *str) {
   write_begin_error(client->output_buffer);
   write_chars(client->output_buffer, str);
   write_end_error(client->output_buffer);
+}
+
+void add_integer_reply(Client *client, int integer) {
+  char number_str[32];
+  snprintf(number_str, sizeof(number_str), "%d", integer);
+
+  write_begin_integer(client->output_buffer);
+  write_chars(client->output_buffer, number_str);
+  write_end_integer(client->output_buffer);
 }
 
 /*
@@ -188,4 +196,20 @@ void handle_get(CommandHandler *ch) {
   } else {
     add_bulk_string_reply(ch->client, redis_value->data.str);
   }
+}
+
+void handle_exist(CommandHandler *ch) {
+  if (ch->arg_count < 2) {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'exist' command");
+    return;
+  }
+
+  int count = 0;
+  for (int i = 0; i < ch->arg_count; i++) {
+    if (redis_db_exist(ch->args[i])) {
+      count += 1;
+    }
+  }
+
+  add_integer_reply(ch->client, count);
 }

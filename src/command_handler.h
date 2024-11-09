@@ -6,10 +6,10 @@ extern "C" {
 #endif
 
 #include "client.h"
-#include <stddef.h> // For size_t
-#include <stdint.h> // For int64_t
+#include <stddef.h>
+#include <stdint.h>
 
-typedef enum { CMD_PING, CMD_ECHO, CMD_SET, CMD_GET, CMD_UNKNOWN } CommandType;
+typedef enum { CMD_PING, CMD_ECHO, CMD_SET, CMD_GET, CMD_EXIST, CMD_UNKNOWN } CommandType;
 
 typedef struct CommandHandler {
   char *buf;

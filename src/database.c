@@ -1,5 +1,6 @@
 #include "database.h"
 #include "khash.h"
+#include <stdbool.h>
 
 khash_t(redis_hash) * h;
 
@@ -68,11 +69,15 @@ static RedisValue *get(khash_t(redis_hash) * h, const char *key) {
   return NULL; // key not found
 }
 
+static bool exist(const char *key) {
+  khiter_t k = kh_get(redis_hash, h, key);
+  return kh_exist(h, k) ? true : false;
+}
+
 void redis_db_create() { create_redis_hash_table(); }
 void redis_db_destroy() { destroy_redis_hash(h); }
-
 void redis_db_set(const char *key, const char *value, ValueType type, long long expiration) {
   set(h, key, value, type, expiration);
 }
-
 RedisValue *redis_db_get(const char *key) { return get(h, key); }
+bool redis_db_exist(const char *key) { return exist(key); }
