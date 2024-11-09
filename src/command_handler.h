@@ -26,12 +26,13 @@ typedef struct CommandHandler {
 
 CommandHandler *create_command_handler(struct Client *client, size_t initial_buf_size,
                                        size_t initial_arg_capacity);
+void handle_command(CommandHandler *ch);
+void destroy_command_handler(CommandHandler *ch);
 void begin_array_handler(CommandHandler *ch, int64_t len);
 void end_array_handler(CommandHandler *ch);
 void begin_bulk_string_handler(CommandHandler *ch, int64_t len);
 void end_bulk_string_handler(CommandHandler *ch);
 void chars_handler(CommandHandler *ch, const char *begin, const char *end);
-void destroy_command_handler(CommandHandler *ch);
 
 #ifdef __cplusplus
 }
