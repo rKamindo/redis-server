@@ -1,5 +1,6 @@
 #include "database.h"
 #include "khash.h"
+#include "util.h"
 #include <stdbool.h>
 
 khash_t(redis_hash) * h;
@@ -26,18 +27,26 @@ void destroy_redis_hash(khash_t(redis_hash) * h) {
 static void set(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
                 long long expiration) {
   int ret;
+  char *old_key = NULL;
+
+  // check if the key already exists
+  khiter_t k = kh_get(redis_hash, h, key);
+  if (k != kh_end(h)) {
+    old_key = (char *)kh_key(h, k);
+  }
+
   // attempt to put the key into the hash table
-  khiter_t k = kh_put(redis_hash, h, key, &ret);
-  if (ret == 1) { // key not present
-    kh_key(h, k) = strdup(key);
-  } else { // key present, we're updating an existing entry
-    // if the existing value is a string, free it
+  k = kh_put(redis_hash, h, key, &ret);
+  if (ret == 0) { // key present, we're updating an existing entry
     RedisValue *old_value = kh_value(h, k);
     if (old_value->type == TYPE_STRING) {
       free(old_value->data.str);
     }
+    free(old_key);
     free(old_value);
   }
+
+  kh_key(h, k) = strdup(key);
 
   RedisValue *redis_value = malloc(sizeof(RedisValue));
   redis_value->type = type;
@@ -45,7 +54,7 @@ static void set(khash_t(redis_hash) * h, const char *key, const void *value, Val
 
   // handle the value based on its type
   if (type == TYPE_STRING) {
-    redis_value->data.str = strdup((char *)value);
+    redis_value->data.str = strdup(value);
   }
 
   kh_value(h, k) = redis_value;
@@ -71,7 +80,23 @@ static RedisValue *get(khash_t(redis_hash) * h, const char *key) {
 
 static bool exist(const char *key) {
   khiter_t k = kh_get(redis_hash, h, key);
-  return kh_exist(h, k) ? true : false;
+  return k != kh_end(h) && kh_exist(h, k) ? true : false;
+}
+
+static void delete(const char *key) {
+  khiter_t k = kh_get(redis_hash, h, key);
+
+  if (k != kh_end(h)) { // check if the key exists
+    RedisValue *rv = kh_value(h, k);
+    if (rv != NULL) { // additional check to ensure rv is not NULL
+      if (rv->type == TYPE_STRING) {
+        free(rv->data.str);
+      }
+      free(rv);
+    }
+    free((char *)kh_key(h, k));
+    kh_del(redis_hash, h, k);
+  }
 }
 
 void redis_db_create() { create_redis_hash_table(); }
@@ -81,3 +106,4 @@ void redis_db_set(const char *key, const char *value, ValueType type, long long 
 }
 RedisValue *redis_db_get(const char *key) { return get(h, key); }
 bool redis_db_exist(const char *key) { return exist(key); }
+void redis_db_delete(const char *key) { return delete (key); }

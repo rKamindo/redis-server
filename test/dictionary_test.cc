@@ -1,5 +1,6 @@
 extern "C" {
 #include "database.h"
+#include "util.h"
 }
 #include <gtest/gtest.h>
 #include <unistd.h>
@@ -128,4 +129,33 @@ TEST_F(DatabaseTest, MultipleKeysWithExpiration) {
   EXPECT_EQ(redis_db_get(key1), nullptr);
   EXPECT_EQ(redis_db_get(key2), nullptr);
   EXPECT_NE(redis_db_get(key3), nullptr);
+}
+
+TEST_F(DatabaseTest, SetAndCheckExists) {
+  const char *key = "test_key";
+  const char *value = "test_value";
+  redis_db_set(key, value, TYPE_STRING, 0);
+
+  bool exists = redis_db_exist(key);
+
+  EXPECT_EQ(exists, true);
+}
+
+TEST_F(DatabaseTest, DoNotSetKeyShouldNotExist) {
+  const char *key = "test_key";
+
+  bool exists = redis_db_exist(key);
+
+  EXPECT_EQ(exists, false);
+}
+
+TEST_F(DatabaseTest, DeleteShouldNotExist) {
+  const char *key = "test_key";
+  const char *value = "test_value";
+  redis_db_set(key, value, TYPE_STRING, 0);
+  redis_db_delete(key);
+
+  bool exists = redis_db_exist(key);
+
+  EXPECT_EQ(exists, false);
 }
