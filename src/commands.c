@@ -147,7 +147,7 @@ void handle_set(CommandHandler *ch) {
 
   // only get the existing value if we need to check conditions (NX, XX) or respond to GET
   // option
-  if (options.nx || options.xx || options.get) {
+  if (options.nx || options.xx || options.get || options.keepttl) {
     existing_value = redis_db_get(ch->args[1]);
     if (existing_value != NULL) {
       key_exists = true;
@@ -220,7 +220,7 @@ void handle_delete(CommandHandler *ch) {
     return;
   }
 
-  for (int i = 0; i < ch->arg_count; i++) {
+  for (int i = 1; i < ch->arg_count; i++) {
     redis_db_delete(ch->args[i]);
   }
   add_simple_string_reply(ch->client, "OK");
