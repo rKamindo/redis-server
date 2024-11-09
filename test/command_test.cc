@@ -66,6 +66,74 @@ TEST_F(CommandTest, SetCommand) {
   EXPECT_EQ(GetReply(), "$7\r\nmyvalue\r\n");
 }
 
+TEST_F(CommandTest, SetWithNX_ShouldNotOverwriteExistingKey) {
+  ExecuteCommand({"SET", "mykey", "initial_value"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"SET", "mykey", "new_value", "NX"});
+  EXPECT_EQ(GetReply(), "$-1\r\n");
+
+  ExecuteCommand({"GET", "mykey"});
+  EXPECT_EQ(GetReply(), "$13\r\ninitial_value\r\n");
+}
+
+TEST_F(CommandTest, SetWithXX_ShouldOverwriteExistingKey) {
+  ExecuteCommand({"SET", "mykey", "initial_value"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"SET", "mykey", "new_value", "XX"});
+  EXPECT_EQ(GetReply(), "+OK\r\n"); // should overwrite
+
+  ExecuteCommand({"GET", "mykey"});
+  EXPECT_EQ(GetReply(), "$9\r\nnew_value\r\n"); // should now be new_value
+}
+
+TEST_F(CommandTest, SetWithXX_ShouldNotSet) {
+  ExecuteCommand({"SET", "mykey", "new_value", "XX"});
+  EXPECT_EQ(GetReply(), "$-1\r\n"); // should not set, key does not exist
+
+  ExecuteCommand({"GET", "mykey"});
+  EXPECT_EQ(GetReply(), "$-1\r\n");
+}
+
+TEST_F(CommandTest, SetWithGET_ShouldReturnOldValue) {
+  ExecuteCommand({"SET", "mykey", "initial_value"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"SET", "mykey", "new_value", "GET"});
+  EXPECT_EQ(GetReply(), "$13\r\ninitial_value\r\n"); // Should return old value
+}
+
+TEST_F(CommandTest, SetWithGET_ShouldReturnNull) {
+  ExecuteCommand({"SET", "mykey", "initial_value", "GET"});
+  EXPECT_EQ(GetReply(), "$-1\r\n");
+}
+
+TEST_F(CommandTest, SetWithExpiration_ShouldExpireKey) {
+  ExecuteCommand({"SET", "expiring_key", "value", "EX", "1"}); // 1 second expiration
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  usleep(1100000); // sleep for 1.1 seconds to allow expiration
+
+  ExecuteCommand({"GET", "expiring_key"});
+  EXPECT_EQ(GetReply(), "$-1\r\n"); // should return null since it expired
+}
+
+TEST_F(CommandTest, SetWithKEEPTTL_ShouldPreserveTTL) {
+  ExecuteCommand({"SET", "ttl_key", "value", "EX", "2"}); // 2 seconds expiration
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  usleep(1000000); // sleep for 1 second
+
+  ExecuteCommand({"SET", "ttl_key", "new_value", "KEEPTTL"}); // update with KEEPTTL
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  usleep(1200000); // sleep for another 1.2 seconds to check expiration
+
+  ExecuteCommand({"GET", "ttl_key"});
+  EXPECT_EQ(GetReply(), "$-1\r\n"); // should return null since it expired
+}
+
 TEST_F(CommandTest, GetCommand) {
   ExecuteCommand({"SET", "mykey", "myvalue"});
   GetReply();
