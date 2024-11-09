@@ -205,11 +205,23 @@ void handle_exist(CommandHandler *ch) {
   }
 
   int count = 0;
-  for (int i = 0; i < ch->arg_count; i++) {
+  for (int i = 1; i < ch->arg_count; i++) {
     if (redis_db_exist(ch->args[i])) {
       count += 1;
     }
   }
 
   add_integer_reply(ch->client, count);
+}
+
+void handle_delete(CommandHandler *ch) {
+  if (ch->arg_count < 2) {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'delete' command");
+    return;
+  }
+
+  for (int i = 0; i < ch->arg_count; i++) {
+    redis_db_delete(ch->args[i]);
+  }
+  add_simple_string_reply(ch->client, "OK");
 }

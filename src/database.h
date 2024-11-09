@@ -21,6 +21,5 @@ void redis_db_destroy();
 void redis_db_set(const char *key, const char *value, ValueType type, long long expiration);
 RedisValue *redis_db_get(const char *key);
 bool redis_db_exist(const char *key);
-long long current_time_millis();
-
+void redis_db_delete(const char *key);
 #endif // DATABASE_H

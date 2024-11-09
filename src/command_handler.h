@@ -9,7 +9,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum { CMD_PING, CMD_ECHO, CMD_SET, CMD_GET, CMD_EXIST, CMD_UNKNOWN } CommandType;
+typedef enum { CMD_PING, CMD_ECHO, CMD_SET, CMD_GET, CMD_EXIST, CMD_DEL, CMD_UNKNOWN } CommandType;
 
 typedef struct CommandHandler {
   char *buf;

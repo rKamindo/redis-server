@@ -1,5 +1,6 @@
 extern "C" {
 #include "database.h"
+#include "util.h"
 }
 #include <gtest/gtest.h>
 #include <unistd.h>
