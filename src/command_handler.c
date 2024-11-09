@@ -21,6 +21,10 @@ CommandType get_command_type(char *command) {
     return CMD_EXIST;
   else if (strcmp(command, "DEL") == 0)
     return CMD_DEL;
+  else if (strcmp(command, "INCR") == 0)
+    return CMD_INCR;
+  else if (strcmp(command, "DECR") == 0)
+    return CMD_DECR;
   else
     return CMD_UNKNOWN;
 }
@@ -47,6 +51,12 @@ void handle_command(CommandHandler *ch) {
     break;
   case CMD_DEL:
     handle_delete(ch);
+    break;
+  case CMD_INCR:
+    handle_incr(ch);
+    break;
+  case CMD_DECR:
+    handle_decr(ch);
     break;
   default:
     add_error_reply(ch->client, "ERR unknown command");

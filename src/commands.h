@@ -18,6 +18,8 @@ void handle_set(CommandHandler *ch);
 void handle_get(CommandHandler *ch);
 void handle_exist(CommandHandler *ch);
 void handle_delete(CommandHandler *ch);
+void handle_incr(CommandHandler *ch);
+void handle_decr(CommandHandler *ch);
 
 void add_error_reply(Client *client, const char *str);
 
