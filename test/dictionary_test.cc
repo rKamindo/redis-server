@@ -159,3 +159,85 @@ TEST_F(DatabaseTest, DeleteShouldNotExist) {
 
   EXPECT_EQ(exists, false);
 }
+
+TEST_F(DatabaseTest, LPushOperation) {
+  const char *key = "list_key";
+  const char *value1 = "value1";
+  const char *value2 = "value2";
+  int length;
+
+  EXPECT_EQ(redis_db_lpush(key, value1, &length), 0);
+  EXPECT_EQ(length, 1);
+
+  EXPECT_EQ(redis_db_lpush(key, value2, &length), 0);
+  EXPECT_EQ(length, 2);
+
+  RedisValue *rv = redis_db_get(key);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(rv->type, TYPE_LIST);
+  EXPECT_EQ(get_list_length(rv->data.list), 2);
+}
+
+TEST_F(DatabaseTest, RPushOperation) {
+  const char *key = "list_key";
+  const char *value1 = "value1";
+  const char *value2 = "value2";
+  int length;
+
+  EXPECT_EQ(redis_db_rpush(key, value1, &length), 0);
+  EXPECT_EQ(length, 1);
+
+  EXPECT_EQ(redis_db_rpush(key, value2, &length), 0);
+  EXPECT_EQ(length, 2);
+
+  RedisValue *rv = redis_db_get(key);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(rv->type, TYPE_LIST);
+  EXPECT_EQ(get_list_length(rv->data.list), 2);
+}
+
+TEST_F(DatabaseTest, LPushRPushCombined) {
+  const char *key = "list_key";
+  const char *value1 = "value1";
+  const char *value2 = "value2";
+  int length;
+
+  EXPECT_EQ(redis_db_lpush(key, value1, &length), 0);
+  EXPECT_EQ(redis_db_rpush(key, value2, &length), 0);
+  EXPECT_EQ(length, 2);
+
+  RedisValue *rv = redis_db_get(key);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(rv->type, TYPE_LIST);
+  EXPECT_EQ(get_list_length(rv->data.list), 2);
+}
+
+TEST_F(DatabaseTest, PushToNonListKey) {
+  const char *key = "string_key";
+  const char *string_value = "string_value";
+  const char *list_value = "list_value";
+  int length;
+
+  redis_db_set(key, string_value, TYPE_STRING, 0);
+
+  EXPECT_EQ(redis_db_lpush(key, list_value, &length), ERR_TYPE_MISMATCH);
+  EXPECT_EQ(redis_db_rpush(key, list_value, &length), ERR_TYPE_MISMATCH);
+
+  RedisValue *rv = redis_db_get(key);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(rv->type, TYPE_STRING);
+  EXPECT_STREQ(rv->data.str, string_value);
+}
+
+TEST_F(DatabaseTest, DeleteList) {
+  const char *key = "list_key";
+  const char *value = "value";
+  int length;
+
+  EXPECT_EQ(redis_db_lpush(key, value, &length), 0);
+  EXPECT_EQ(length, 1);
+
+  redis_db_delete(key);
+
+  EXPECT_FALSE(redis_db_exist(key));
+}

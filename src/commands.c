@@ -1,6 +1,7 @@
 #include "commands.h"
 #include "command_handler.h"
 #include "database.h"
+#include "linked_list.h"
 #include "sys/time.h"
 #include "util.h"
 #include <errno.h>
@@ -193,6 +194,8 @@ void handle_get(CommandHandler *ch) {
   RedisValue *redis_value = redis_db_get(ch->args[1]);
   if (redis_value == NULL) {
     add_null_reply(ch->client);
+  } else if (redis_value->type != TYPE_STRING) {
+    add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
   } else {
     add_bulk_string_reply(ch->client, redis_value->data.str);
   }
@@ -260,3 +263,37 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
 void handle_incr(CommandHandler *ch) { handle_incr_decr(ch, 1); }
 
 void handle_decr(CommandHandler *ch) { handle_incr_decr(ch, -1); }
+
+void handle_lpush(CommandHandler *ch) {
+  if (ch->arg_count < 3) { // at least 2 arguments: key and one element
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'lpush' command");
+    return;
+  }
+  const char *key = ch->args[1];
+  int length = 0;
+  for (int i = 2; i < ch->arg_count; i++) {
+    int result = redis_db_lpush(key, ch->args[i], &length); // capture the result
+    if (result == ERR_TYPE_MISMATCH) {                      // check for type mismatch error
+      add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
+      return;
+    }
+  }
+  add_integer_reply(ch->client, length);
+}
+
+void handle_rpush(CommandHandler *ch) {
+  if (ch->arg_count < 3) { // at least 2 arguments: key and one element
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'rpush' command");
+    return;
+  }
+  const char *key = ch->args[1];
+  int length = 0; // stores the length of the list after operation
+  for (int i = 2; i < ch->arg_count; i++) {
+    int result = redis_db_rpush(key, ch->args[i], &length); //
+    if (result == ERR_TYPE_MISMATCH) {                      // check for type mismatch error
+      add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
+      return;
+    }
+  }
+  add_integer_reply(ch->client, length);
+}
