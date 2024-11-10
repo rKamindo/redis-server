@@ -18,6 +18,8 @@ void destroy_redis_hash(khash_t(redis_hash) * h) {
       RedisValue *rv = kh_value(h, k);
       if (rv->type == TYPE_STRING) {
         free(rv->data.str); // free the string data
+      } else if (rv->type == TYPE_LIST) {
+        destroy_list(rv->data.str);
       }
       free(rv);
     }
