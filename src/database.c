@@ -1,5 +1,6 @@
 #include "database.h"
 #include "khash.h"
+#include "linked_list.h"
 #include "util.h"
 #include <stdbool.h>
 
@@ -55,12 +56,14 @@ static void set(khash_t(redis_hash) * h, const char *key, const void *value, Val
   // handle the value based on its type
   if (type == TYPE_STRING) {
     redis_value->data.str = strdup(value);
+  } else if (type == TYPE_LIST) {
+    redis_value->data.list = (List)value;
   }
 
   kh_value(h, k) = redis_value;
 }
 
-static RedisValue *get(khash_t(redis_hash) * h, const char *key) {
+static RedisValue *get_string(khash_t(redis_hash) * h, const char *key) {
   khiter_t k = kh_get(redis_hash, h, key);
   if (k != kh_end(h)) {
     RedisValue *value = kh_value(h, k);
@@ -91,6 +94,8 @@ static void delete(const char *key) {
     if (rv != NULL) { // additional check to ensure rv is not NULL
       if (rv->type == TYPE_STRING) {
         free(rv->data.str);
+      } else if (rv->type == TYPE_LIST) {
+        destroy_list(rv->data.list);
       }
       free(rv);
     }
@@ -101,9 +106,42 @@ static void delete(const char *key) {
 
 void redis_db_create() { create_redis_hash_table(); }
 void redis_db_destroy() { destroy_redis_hash(h); }
-void redis_db_set(const char *key, const char *value, ValueType type, long long expiration) {
+void redis_db_set(const char *key, const void *value, ValueType type, long long expiration) {
   set(h, key, value, type, expiration);
 }
-RedisValue *redis_db_get(const char *key) { return get(h, key); }
+RedisValue *redis_db_get(const char *key) { return get_string(h, key); }
 bool redis_db_exist(const char *key) { return exist(key); }
 void redis_db_delete(const char *key) { return delete (key); }
+int redis_db_lpush(const char *key, const char *item, int *length) {
+  RedisValue *existing_value = redis_db_get(key);
+  List list;
+  if (existing_value != NULL) {
+    if (existing_value->type != TYPE_LIST) {
+      return ERR_TYPE_MISMATCH;
+    }
+    list = existing_value->data.list;
+  } else {
+    // if no existing value, create a new list
+    list = create_list();
+    redis_db_set(key, list, TYPE_LIST, 0);
+  }
+  lpush(list, item, length);
+  return 0;
+}
+
+int redis_db_rpush(const char *key, const char *item, int *length) {
+  RedisValue *existing_value = redis_db_get(key);
+  List list;
+  if (existing_value != NULL) {
+    if (existing_value->type != TYPE_LIST) {
+      return ERR_TYPE_MISMATCH;
+    }
+    list = existing_value->data.list;
+  } else {
+    // if no existing value, create a new list
+    list = create_list();
+    redis_db_set(key, list, TYPE_LIST, 0);
+  }
+  rpush(list, item, length);
+  return 0;
+}

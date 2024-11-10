@@ -221,3 +221,56 @@ TEST_F(CommandTest, DecrWithInvalidValue) {
   ExecuteCommand({"DECR", "invalid_key"});
   EXPECT_EQ(GetReply(), "-ERR value is not an integer\r\n");
 }
+
+TEST_F(CommandTest, LpushCommand) {
+  ExecuteCommand({"LPUSH", "mylist", "car"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+
+  ExecuteCommand({"LPUSH", "mylist", "dog"});
+  EXPECT_EQ(GetReply(), ":2\r\n");
+}
+
+TEST_F(CommandTest, LpushCommand_MultipleItems) {
+  ExecuteCommand({"LPUSH", "mylist", "car", "dog", "house"});
+  EXPECT_EQ(GetReply(), ":3\r\n");
+}
+
+TEST_F(CommandTest, RpushCommand_MultipleItems) {
+  ExecuteCommand({"LPUSH", "mylist", "car", "dog", "house"});
+  EXPECT_EQ(GetReply(), ":3\r\n");
+}
+
+TEST_F(CommandTest, RpushCommand) {
+  ExecuteCommand({"RPUSH", "mylist", "car"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+
+  ExecuteCommand({"RPUSH", "mylist", "dog"});
+  EXPECT_EQ(GetReply(), ":2\r\n");
+}
+
+TEST_F(CommandTest, GetStringOnList_ShouldReturnError) {
+  ExecuteCommand({"LPUSH", "mylist", "car"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+
+  ExecuteCommand({"GET", "mylist"});
+  EXPECT_EQ(GetReply(), "-ERR Operation against a key holding the wrong kind of value\r\n");
+}
+
+TEST_F(CommandTest, LpushRpushOnStringValue_ShouldReturnError) {
+  ExecuteCommand({"SET", "mylist", "x"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+
+  ExecuteCommand({"LPUSH", "mylist", "car"});
+  EXPECT_EQ(GetReply(), "-ERR Operation against a key holding the wrong kind of value\r\n");
+
+  ExecuteCommand({"RPUSH", "mylist", "car"});
+  EXPECT_EQ(GetReply(), "-ERR Operation against a key holding the wrong kind of value\r\n");
+}
+
+TEST_F(CommandTest, LpushAndDelete_ShouldDelete) {
+  ExecuteCommand({"LPUSH", "mylist", "car"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+
+  ExecuteCommand({"DEL", "mylist", "car"});
+  EXPECT_EQ(GetReply(), "+OK\r\n");
+}

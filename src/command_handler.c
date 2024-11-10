@@ -25,6 +25,10 @@ CommandType get_command_type(char *command) {
     return CMD_INCR;
   else if (strcmp(command, "DECR") == 0)
     return CMD_DECR;
+  else if (strcmp(command, "LPUSH") == 0)
+    return CMD_LPUSH;
+  else if (strcmp(command, "RPUSH") == 0)
+    return CMD_RPUSH;
   else
     return CMD_UNKNOWN;
 }
@@ -57,6 +61,12 @@ void handle_command(CommandHandler *ch) {
     break;
   case CMD_DECR:
     handle_decr(ch);
+    break;
+  case CMD_LPUSH:
+    handle_lpush(ch);
+    break;
+  case CMD_RPUSH:
+    handle_rpush(ch);
     break;
   default:
     add_error_reply(ch->client, "ERR unknown command");
