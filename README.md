@@ -4,9 +4,12 @@ This ongoing project is a lightweight Redis compatible server implementation in 
 
 Currently working on improving the performance of this server using a variety of techniques from introducing a state machine to efficiently parse messages, to using separate input and output buffers for each client, to epoll-based I/O multiplexing, all in all to allow better concurrent handling of requests.
 
+## Latest benchmark results
+![image](https://github.com/user-attachments/assets/fc269633-df65-4440-a3f3-7e1abd69aacb)
+
 ## Features
 - RESP (REdis Serialization Protocol) implementation
-- Support for the following Redis commands (PING, ECHO, SET (with options), GET, EXIST, DELETE, INCR, DECR)
+- Support for the following Redis commands (PING, ECHO, SET (with options), GET, EXIST, DELETE, INCR, DECR, LPUSH, RPUSH)
 - GoogleTest for testing (unit tests and integration tests)
 - CMake for building
 
