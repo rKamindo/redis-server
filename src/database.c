@@ -19,7 +19,7 @@ void destroy_redis_hash(khash_t(redis_hash) * h) {
       if (rv->type == TYPE_STRING) {
         free(rv->data.str); // free the string data
       } else if (rv->type == TYPE_LIST) {
-        destroy_list(rv->data.str);
+        destroy_list(rv->data.list);
       }
       free(rv);
     }
