@@ -113,6 +113,68 @@ int rpush(List list, const char *data, int *length) {
   return 0;
 }
 
+char **lrange(List list, int start, int end, int *range_length) {
+  if (list == NULL) {
+    *range_length = 0;
+    return NULL;
+  }
+
+  // handle negative start value,
+  if (start < 0) {
+    start = list->length + start;
+  }
+
+  // handle negative end value
+  if (end < 0) {
+    end = list->length + end;
+  }
+
+  if (start < 0 || start >= list->length || end < start) {
+    *range_length = 0;
+    return NULL;
+  }
+
+  // adjust end if it's beyond the list length, list is "0-indexed"
+  if (end >= list->length) {
+    end = list->length - 1;
+  }
+
+  int count = end - start + 1;
+  *range_length = count;
+
+  char **result = malloc(count * sizeof(char *));
+  if (result == NULL) {
+    *range_length = 0;
+    return NULL;
+  }
+
+  Node *cur = list->head;
+  for (int i = 0; i < start && cur != NULL; i++) {
+    cur = cur->next;
+  }
+
+  int i;
+  for (i = 0; i < count && cur != NULL; i++) {
+    result[i] = strdup(cur->data);
+    if (result[i] == NULL) {
+      // clean up on allocation failure
+      for (int j = 0; j < i; j++) {
+        free(result[j]);
+      }
+      free(result);
+      return NULL;
+    }
+    cur = cur->next;
+  }
+
+  // check if we reached the end of the list before filling the entire range
+  if (cur == NULL && i < count) {
+    *range_length = i; // adjust the range length to the actual number of elements copied
+  }
+
+  return result;
+}
+
 size_t get_list_length(List list) {
   if (list == NULL) {
     return 0;
