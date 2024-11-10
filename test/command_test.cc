@@ -274,3 +274,74 @@ TEST_F(CommandTest, LpushAndDelete_ShouldDelete) {
   ExecuteCommand({"DEL", "mylist", "car"});
   EXPECT_EQ(GetReply(), "+OK\r\n");
 }
+
+TEST_F(CommandTest, LrangeValidRange) {
+  ExecuteCommand({"LPUSH", "mylist", "item1"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item2"});
+  EXPECT_EQ(GetReply(), ":2\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item3"});
+  EXPECT_EQ(GetReply(), ":3\r\n");
+
+  ExecuteCommand({"LRANGE", "mylist", "0", "2"});
+  EXPECT_EQ(GetReply(), "*3\r\n$5\r\nitem3\r\n$5\r\nitem2\r\n$5\r\nitem1\r\n");
+}
+
+TEST_F(CommandTest, LrangePartialRange) {
+  ExecuteCommand({"LPUSH", "mylist", "item1"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item2"});
+  EXPECT_EQ(GetReply(), ":2\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item3"});
+  EXPECT_EQ(GetReply(), ":3\r\n");
+
+  ExecuteCommand({"LRANGE", "mylist", "1", "2"});
+
+  EXPECT_EQ(GetReply(), "*2\r\n$5\r\nitem2\r\n$5\r\nitem1\r\n");
+}
+
+TEST_F(CommandTest, LrangeInvalidRange) {
+  ExecuteCommand({"LPUSH", "mylist", "item1"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item2"});
+  EXPECT_EQ(GetReply(), ":2\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item3"});
+  EXPECT_EQ(GetReply(), ":3\r\n");
+
+  // test an invalid range (out of bounds)
+  ExecuteCommand({"LRANGE", "mylist", "3", "5"});
+  EXPECT_EQ(GetReply(), "*0\r\n");
+
+  // test with start greater than end
+  ExecuteCommand({"LRANGE", "mylist", "2", "1"});
+  EXPECT_EQ(GetReply(), "*0\r\n");
+}
+
+TEST_F(CommandTest, LrangeSingleElementRange) {
+  ExecuteCommand({"LPUSH", "mylist", "item1"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+
+  ExecuteCommand({"LRANGE", "mylist", "0", "0"});
+  EXPECT_EQ(GetReply(), "*1\r\n$5\r\nitem1\r\n");
+}
+
+TEST_F(CommandTest, LrangeNegativeIndices) {
+  ExecuteCommand({"LPUSH", "mylist", "item1"});
+  EXPECT_EQ(GetReply(), ":1\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item2"});
+  EXPECT_EQ(GetReply(), ":2\r\n");
+  ExecuteCommand({"LPUSH", "mylist", "item3"});
+  EXPECT_EQ(GetReply(), ":3\r\n");
+
+  ExecuteCommand({"LRANGE", "mylist", "-3", "-1"});
+  EXPECT_EQ(GetReply(), "*3\r\n$5\r\nitem3\r\n$5\r\nitem2\r\n$5\r\nitem1\r\n");
+
+  ExecuteCommand({"LRANGE", "mylist", "-3", "1"});
+  EXPECT_EQ(GetReply(), "*2\r\n$5\r\nitem3\r\n$5\r\nitem2\r\n");
+}
+
+TEST_F(CommandTest, LrangeKeyNotFound) {
+  ExecuteCommand({"LRANGE", "non_existent_list", "0", "2"});
+
+  EXPECT_EQ(GetReply(), "*0\r\n");
+}

@@ -241,3 +241,60 @@ TEST_F(DatabaseTest, DeleteList) {
 
   EXPECT_FALSE(redis_db_exist(key));
 }
+
+TEST_F(DatabaseTest, LrangeValidRange) {
+  const char *key = "list_key";
+  const char *value1 = "value1";
+  const char *value2 = "value2";
+  const char *value3 = "value3";
+  int length;
+
+  EXPECT_EQ(redis_db_rpush(key, value1, &length), 0);
+  EXPECT_EQ(redis_db_rpush(key, value2, &length), 0);
+  EXPECT_EQ(redis_db_rpush(key, value3, &length), 0);
+  EXPECT_EQ(length, 3);
+
+  char **range;
+  int range_length;
+  int result = redis_db_lrange(key, 0, 2, &range, &range_length);
+  EXPECT_EQ(result, 0); // check for success
+  EXPECT_NE(range, nullptr);
+  EXPECT_EQ(range[0], std::string(value1));
+  EXPECT_EQ(range[1], std::string(value2));
+  EXPECT_EQ(range[2], std::string(value3));
+
+  cleanup_lrange_result(range, range_length);
+
+  // test partial range
+  result = redis_db_lrange(key, 0, 1, &range, &range_length);
+  EXPECT_EQ(result, 0); // check for success
+  EXPECT_NE(range, nullptr);
+  EXPECT_EQ(range[0], std::string(value1));
+  EXPECT_EQ(range[1], std::string(value2));
+
+  cleanup_lrange_result(range, range_length);
+
+  // test range end out of bounds
+  result = redis_db_lrange(key, 0, 5, &range, &range_length);
+  EXPECT_EQ(result, 0); // check for success
+  EXPECT_NE(range, nullptr);
+  EXPECT_EQ(range[0], std::string(value1));
+  EXPECT_EQ(range[1], std::string(value2));
+  EXPECT_EQ(range[2], std::string(value3));
+
+  cleanup_lrange_result(range, range_length);
+
+  // test range negative indices
+  result = redis_db_lrange(key, -3, -1, &range, &range_length);
+  EXPECT_EQ(result, 0); // check for success
+  EXPECT_NE(range, nullptr);
+  EXPECT_EQ(range[0], std::string(value1));
+  EXPECT_EQ(range[1], std::string(value2));
+  EXPECT_EQ(range[2], std::string(value3));
+
+  cleanup_lrange_result(range, range_length); // Clean up again
+
+  redis_db_delete(key); // delete the list
+  result = redis_db_lrange(key, 0, 2, &range, &range_length);
+  EXPECT_EQ(result, ERR_KEY_NOT_FOUND); // Expect an error for non-existent key
+}

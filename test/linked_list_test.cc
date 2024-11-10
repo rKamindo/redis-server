@@ -42,8 +42,6 @@ TEST_F(LinkedListTest, LpushAndRPush) {
   EXPECT_EQ(get_list_length(list), 2);
 }
 
-void cleanup_lrange_result(char **range, int range_length);
-
 TEST_F(LinkedListTest, LrangeFullRange) {
   int length;
   int range_length;
@@ -135,11 +133,4 @@ TEST_F(LinkedListTest, LrangeNegativeIndices) {
   EXPECT_STREQ(range[1], "item2");
 
   cleanup_lrange_result(range, range_length);
-}
-
-void cleanup_lrange_result(char **range, int range_length) {
-  for (int i = 0; i < range_length; i++) {
-    free(range[i]);
-  }
-  free(range);
 }

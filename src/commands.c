@@ -21,6 +21,19 @@ void add_bulk_string_reply(Client *client, const char *str) {
   write_end_bulk_string(client->output_buffer);
 }
 
+void add_array_reply(Client *client, char **array, int length) {
+  write_begin_array(client->output_buffer, length);
+  if (array != NULL) {
+    for (int i = 0; i < length; i++) {
+      int64_t len = strlen(array[i]);
+      write_begin_bulk_string(client->output_buffer, len);
+      write_chars(client->output_buffer, array[i]);
+      write_end_bulk_string(client->output_buffer);
+    }
+  }
+  write_end_array(client->output_buffer);
+}
+
 void add_null_reply(Client *client) {
   write_begin_bulk_string(client->output_buffer, -1); // indicate that this is a null bulk string
   write_end_bulk_string(client->output_buffer);
@@ -139,6 +152,11 @@ void handle_set(CommandHandler *ch) {
     return;
   case ERR_VALUE:
     add_error_reply(ch->client, "ERR value is not an integer or out of range");
+    return;
+  }
+
+  if (options.expiration < 0) {
+    add_error_reply(ch->client, "ERR expiration must be a non-negative integer");
     return;
   }
 
@@ -296,4 +314,28 @@ void handle_rpush(CommandHandler *ch) {
     }
   }
   add_integer_reply(ch->client, length);
+}
+
+void handle_lrange(CommandHandler *ch) {
+  if (ch->arg_count < 4) { // needs 3 arguments: LRANGE key start end
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'rpush' command");
+    return;
+  }
+
+  char **range;
+  int range_length;
+  char *list_key = ch->args[1];
+  long start = 0;
+  long end = 0;
+  parse_integer(ch->args[2], &start);
+  parse_integer(ch->args[3], &end);
+
+  int error = redis_db_lrange(list_key, start, end, &range, &range_length);
+  if (error == ERR_TYPE_MISMATCH) { // check for type mismatch error
+    add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
+    return;
+  }
+
+  add_array_reply(ch->client, range, range_length);
+  cleanup_lrange_result(range, range_length);
 }

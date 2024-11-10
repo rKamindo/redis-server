@@ -19,7 +19,7 @@ int parse_integer(const char *str, long *result) {
   long value = strtol(str, &endptr, 10);
 
   // check if the conversion was successful and if the value is within range
-  if (endptr == str || *endptr != '\0' || errno == ERANGE || value < 0) {
+  if (endptr == str || *endptr != '\0' || errno == ERANGE) {
     return ERR_VALUE; // return error code for non-integer or out of range
   }
 

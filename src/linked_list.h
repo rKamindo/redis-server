@@ -11,5 +11,6 @@ int lpush(List list, const char *data, int *length);
 int rpush(List list, const char *data, int *length);
 char **lrange(List list, int start, int end, int *range_length);
 size_t get_list_length(List list);
+void cleanup_lrange_result(char **range, int range_length);
 
 #endif // LINKED_LIST_H

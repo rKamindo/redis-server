@@ -20,6 +20,7 @@ typedef enum {
   CMD_DECR,
   CMD_LPUSH,
   CMD_RPUSH,
+  CMD_LRANGE,
   CMD_UNKNOWN
 } CommandType;
 

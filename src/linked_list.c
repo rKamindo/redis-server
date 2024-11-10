@@ -161,7 +161,6 @@ char **lrange(List list, int start, int end, int *range_length) {
       for (int j = 0; j < i; j++) {
         free(result[j]);
       }
-      free(result);
       return NULL;
     }
     cur = cur->next;
@@ -180,4 +179,10 @@ size_t get_list_length(List list) {
     return 0;
   }
   return list->length;
+}
+
+void cleanup_lrange_result(char **range, int range_length) {
+  for (int i = 0; i < range_length; i++) {
+    free(range[i]);
+  }
 }

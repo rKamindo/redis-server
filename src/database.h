@@ -26,5 +26,6 @@ bool redis_db_exist(const char *key);
 void redis_db_delete(const char *key);
 int redis_db_lpush(const char *key, const char *item, int *length);
 int redis_db_rpush(const char *key, const char *item, int *length);
+int redis_db_lrange(const char *key, int start, int end, char ***range, int *range_length);
 
 #endif // DATABASE_H
