@@ -19,7 +19,7 @@ void destroy_redis_hash(khash_t(redis_hash) * h) {
       if (rv->type == TYPE_STRING) {
         free(rv->data.str); // free the string data
       } else if (rv->type == TYPE_LIST) {
-        destroy_list(rv->data.str);
+        destroy_list(rv->data.list);
       }
       free(rv);
     }
@@ -145,5 +145,23 @@ int redis_db_rpush(const char *key, const char *item, int *length) {
     redis_db_set(key, list, TYPE_LIST, 0);
   }
   rpush(list, item, length);
+  return 0;
+}
+
+int redis_db_lrange(const char *key, int start, int end, char ***range, int *range_length) {
+  RedisValue *existing_value = redis_db_get(key);
+  List list;
+  if (existing_value != NULL) {
+    if (existing_value->type != TYPE_LIST) {
+      return ERR_TYPE_MISMATCH;
+    }
+    list = existing_value->data.list;
+  } else {
+    // no existing list by the key
+    *range_length = 0;
+    return ERR_KEY_NOT_FOUND;
+  }
+
+  *range = lrange(list, start, end, range_length);
   return 0;
 }

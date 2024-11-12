@@ -22,6 +22,7 @@ void handle_incr(CommandHandler *ch);
 void handle_decr(CommandHandler *ch);
 void handle_lpush(CommandHandler *ch);
 void handle_rpush(CommandHandler *ch);
+void handle_lrange(CommandHandler *ch);
 
 void add_error_reply(Client *client, const char *str);
 
