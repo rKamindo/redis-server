@@ -2,8 +2,6 @@
 
 This ongoing project is a lightweight Redis compatible server implementation in C, created as part of the [Coding Challenges](https://codingchallenges.fyi/challenges/challenge-redis) project.
 
-Currently working on improving the performance of this server using a variety of techniques from introducing a state machine to efficiently parse messages, to using separate input and output buffers for each client, to epoll-based I/O multiplexing, all in all to allow better concurrent handling of requests.
-
 ## Latest benchmark results
 ![image](https://github.com/user-attachments/assets/fc269633-df65-4440-a3f3-7e1abd69aacb)
 ![image](https://github.com/user-attachments/assets/ca8177ca-0559-4318-8136-693a8af28ef9)
@@ -15,7 +13,12 @@ Currently working on improving the performance of this server using a variety of
 - GoogleTest for testing (unit tests and integration tests)
 - CMake for building
 
-# System Requirements
+## Technical Implementation 
+- epoll-based I/O multiplexing
+- Ring buffers (input and output) for each client
+- Zero allocation byte parsing for RESP protocol
+
+## System Requirements
 - Linux operating system (or other Unix-like systems)
 - CMake (version 3.10 or higher)cmake
 - GCC or Clang compiler with C11 support
