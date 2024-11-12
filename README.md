@@ -6,6 +6,8 @@ Currently working on improving the performance of this server using a variety of
 
 ## Latest benchmark results
 ![image](https://github.com/user-attachments/assets/fc269633-df65-4440-a3f3-7e1abd69aacb)
+![image](https://github.com/user-attachments/assets/ca8177ca-0559-4318-8136-693a8af28ef9)
+
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
