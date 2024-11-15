@@ -95,7 +95,10 @@ void handle_client_disconnection(Client *client, int epfd) {
 
 volatile sig_atomic_t stop_server = 0;
 
-void sigint_handler(int sig) { stop_server = 1; }
+void sigint_handler(int sig) {
+  printf("Received shutdown signal. Initiating graceful shutdown...\n");
+  stop_server = 1;
+}
 
 int start_server() {
   // register the signal handler
@@ -158,9 +161,15 @@ int start_server() {
 
   Handler *handler = create_handler();
 
-  for (;;) {
+  while (!stop_server) {
     num_events = epoll_wait(epfd, events, MAX_EVENTS, -1);
     if (num_events == -1) {
+      if (errno == EINTR) {
+        if (stop_server) {
+          break;
+        }
+        continue;
+      }
       perror("epoll_wait failed");
       exit(EXIT_FAILURE);
     }
@@ -200,15 +209,18 @@ int start_server() {
       } else {
         fprintf(stderr, "Unexpected event type: %d\n", events[i].events);
       }
-
-      if (stop_server) {
-        break;
-      }
     }
   }
+
+  printf("Shutting down server...\n");
+
+  // stop accepting new connections
+  epoll_ctl(epfd, EPOLL_CTL_DEL, SocketFD, NULL);
   close(epfd);
   close(SocketFD);
   redis_db_destroy();
   destroy_handler(handler);
+
+  printf("Server shutdown complete.\n");
   return EXIT_SUCCESS;
 }
