@@ -138,7 +138,7 @@ int start_server() {
     exit(EXIT_FAILURE);
   }
 
-  printf("server started listening\n");
+  printf("Redis Server started listening on port %d\n", ntohs(sa.sin_port));
 
   int epfd = epoll_create(1);
   if (epfd == -1) {
