@@ -16,7 +16,6 @@
 #include "resp.h"
 #include <errno.h>
 
-#define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
 
 void process_client_input(Client *client, int epfd) {
@@ -100,7 +99,7 @@ void sigint_handler(int sig) {
   stop_server = 1;
 }
 
-int start_server() {
+int start_server(int port) {
   // register the signal handler
   signal(SIGINT, sigint_handler);
 
@@ -116,7 +115,7 @@ int start_server() {
   memset(&sa, 0, sizeof sa);
 
   sa.sin_family = AF_INET;
-  sa.sin_port = htons(DEFAULT_PORT);
+  sa.sin_port = htons(port);
   sa.sin_addr.s_addr = htonl(INADDR_ANY);
 
   // set SO_REUSEADDR option
