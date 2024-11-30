@@ -7,7 +7,7 @@ add_executable(redis_lite
     src/redis-server.c
     src/client.c
     src/command_handler.c
-    src/commands.c
+    src/commands.c 
     src/ring_buffer.c
     src/linked_list.c
     src/util.c

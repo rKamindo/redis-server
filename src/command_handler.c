@@ -31,6 +31,8 @@ CommandType get_command_type(char *command) {
     return CMD_RPUSH;
   else if (strcmp(command, "LRANGE") == 0)
     return CMD_LRANGE;
+  else if (strcmp(command, "CONFIG") == 0)
+    return CMD_CONFIG;
   else
     return CMD_UNKNOWN;
 }
@@ -72,6 +74,9 @@ void handle_command(CommandHandler *ch) {
     break;
   case CMD_LRANGE:
     handle_lrange(ch);
+    break;
+  case CMD_CONFIG:
+    handle_config(ch);
     break;
   default:
     add_error_reply(ch->client, "ERR unknown command");

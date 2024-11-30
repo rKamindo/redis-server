@@ -1,6 +1,6 @@
 #include "redis-server.h"
 
-int main() {
-  int status = start_server();
+int main(int argc, char **argv) {
+  int status = start_server(argc, argv);
   return status;
 }

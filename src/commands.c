@@ -8,6 +8,11 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#define MAX_PATH_LENGTH 256
+
+extern char dir[MAX_PATH_LENGTH];
+extern char dbfilename[MAX_PATH_LENGTH];
+
 void add_simple_string_reply(Client *client, const char *str) {
   write_begin_simple_string(client->output_buffer);
   write_chars(client->output_buffer, str);
@@ -338,4 +343,32 @@ void handle_lrange(CommandHandler *ch) {
 
   add_array_reply(ch->client, range, range_length);
   cleanup_lrange_result(range, range_length);
+}
+
+void handle_config(CommandHandler *ch) {
+  if (ch->arg_count < 3) {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'config get' command");
+    return;
+  }
+
+  int param_count = ch->arg_count - 2;
+  char *response[param_count * 2];
+  int response_index = 0;
+
+  if (strcmp(ch->args[1], "GET") == 0) {
+    for (int i = 0; i < param_count; i++) {
+      const char *param = ch->args[i + 2];
+      if (strcmp(param, "dir") == 0) {
+        response[response_index++] = "dir";
+        response[response_index++] = dir;
+      } else if (strcmp(param, "dbfilename") == 0) {
+        response[response_index++] = "dbfilename";
+        response[response_index++] = dbfilename;
+      } else {
+        add_error_reply(ch->client, "ERR Unknown config parameter");
+        return;
+      }
+    }
+    add_array_reply(ch->client, response, response_index);
+  }
 }

@@ -19,6 +19,10 @@
 #define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
 
+#define MAX_PATH_LENGTH 256
+char dir[MAX_PATH_LENGTH] = "/tmp";            // default directory for rdb persistence file
+char dbfilename[MAX_PATH_LENGTH] = "dump.rdb"; // default name for rdb persistence file
+
 void process_client_input(Client *client, int epfd) {
   for (;;) {
 
@@ -97,7 +101,19 @@ volatile sig_atomic_t stop_server = 0;
 
 void sigint_handler(int sig) { stop_server = 1; }
 
-int start_server() {
+int start_server(int argc, char *argv[]) {
+
+  // parse command-line args
+  for (int i = 1; i < argc; i++) {
+    if (i + 1 < argc) {
+      if (strcmp(argv[i], "--dir") == 0) {
+        snprintf(dir, MAX_PATH_LENGTH, "%s", argv[i + 1]);
+      } else if (strcmp(argv[i], "--dbfilename") == 0) {
+        snprintf(dbfilename, MAX_PATH_LENGTH, "%s", argv[i + 1]);
+      }
+    }
+  }
+
   // register the signal handler
   signal(SIGINT, sigint_handler);
 
