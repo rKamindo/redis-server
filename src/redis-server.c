@@ -20,7 +20,7 @@
 #define MAX_EVENTS 10000
 
 #define MAX_PATH_LENGTH 256
-char dir[MAX_PATH_LENGTH] = "/tmp";            // default directory for rdb persistence file
+char dir[MAX_PATH_LENGTH] = "/tmp/redis-data"; // default directory for rdb persistence file
 char dbfilename[MAX_PATH_LENGTH] = "dump.rdb"; // default name for rdb persistence file
 
 void process_client_input(Client *client, int epfd) {
