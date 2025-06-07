@@ -4,7 +4,11 @@ extern "C" {
 #include "command_handler.h"
 #include "commands.h"
 #include "database.h"
+
+extern char dir[256];
+extern char dbfilename[256];
 }
+
 
 class CommandTest : public ::testing::Test {
 protected:
@@ -345,3 +349,11 @@ TEST_F(CommandTest, LrangeKeyNotFound) {
 
   EXPECT_EQ(GetReply(), "*0\r\n");
 }
+
+TEST_F(CommandTest, GetConfig) {
+  ExecuteCommand({"CONFIG", "GET", "dir"});
+  EXPECT_EQ(GetReply(), "*2\r\n$3\r\ndir\r\n$" + std::to_string(strlen(dir)) + "\r\n" + std::string(dir) + "\r\n");
+
+  ExecuteCommand({"CONFIG", "GET", "dbfilename"});
+  EXPECT_EQ(GetReply(), "*2\r\n$10\r\ndbfilename\r\n$" + std::to_string(strlen(dbfilename)) + "\r\n" + std::string(dbfilename) + "\r\n");
+} 
