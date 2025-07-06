@@ -11,7 +11,7 @@ set(COMMON_SOURCES
     ${CMAKE_SOURCE_DIR}/src/util.c
     ${CMAKE_SOURCE_DIR}/src/linked_list.c
     ${CMAKE_SOURCE_DIR}/src/redis-server.c
-
+    ${CMAKE_SOURCE_DIR}/src/rdb.c
 )
 
 set(TEST_EXECUTABLES

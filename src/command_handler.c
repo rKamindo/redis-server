@@ -6,7 +6,6 @@
 
 #include "command_handler.h"
 #include "commands.h"
-#include "resp.h"
 
 CommandType get_command_type(char *command) {
   if (strcmp(command, "PING") == 0)
@@ -33,6 +32,11 @@ CommandType get_command_type(char *command) {
     return CMD_LRANGE;
   else if (strcmp(command, "CONFIG") == 0)
     return CMD_CONFIG;
+  else if (strcmp(command, "SAVE") == 0) {
+    printf("RECEIVED COMMAND SAVE\n");
+    return CMD_SAVE;
+  } else if (strcmp(command, "DBSIZE") == 0)
+    return CMD_DBSIZE;
   else
     return CMD_UNKNOWN;
 }
@@ -77,6 +81,12 @@ void handle_command(CommandHandler *ch) {
     break;
   case CMD_CONFIG:
     handle_config(ch);
+    break;
+  case CMD_SAVE:
+    handle_save(ch);
+    break;
+  case CMD_DBSIZE:
+    handle_dbsize(ch);
     break;
   default:
     add_error_reply(ch->client, "ERR unknown command");

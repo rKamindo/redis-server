@@ -1,15 +1,11 @@
 #include "database.h"
 #include "khash.h"
 #include "linked_list.h"
+#include "rdb.h"
+#include "server_config.h"
 #include "util.h"
 #include <stdbool.h>
-
-khash_t(redis_hash) * h;
-
-void create_redis_hash_table() {
-  // initialize the hash table
-  h = kh_init(redis_hash);
-}
+#include <stdio.h>
 
 void destroy_redis_hash(khash_t(redis_hash) * h) {
   for (khiter_t k = kh_begin(h); k != kh_end(h); k++) {
@@ -27,8 +23,9 @@ void destroy_redis_hash(khash_t(redis_hash) * h) {
   kh_destroy(redis_hash, h);
 }
 
-static void set(khash_t(redis_hash) * h, const char *key, const void *value, ValueType type,
+static void set(redis_db_t *db, const char *key, const void *value, ValueType type,
                 long long expiration) {
+  khash_t(redis_hash) *h = db->h;
   int ret;
   char *old_key = NULL;
 
@@ -47,6 +44,11 @@ static void set(khash_t(redis_hash) * h, const char *key, const void *value, Val
     }
     free(old_key);
     free(old_value);
+  } else { // key is not present, inserting new key, increment db_key_count
+    db->key_count++;
+    if (expiration > 0) { // key has an expiration
+      db->expiry_count++;
+    }
   }
 
   kh_key(h, k) = strdup(key);
@@ -65,12 +67,15 @@ static void set(khash_t(redis_hash) * h, const char *key, const void *value, Val
   kh_value(h, k) = redis_value;
 }
 
-static RedisValue *get_string(khash_t(redis_hash) * h, const char *key) {
+static RedisValue *get(redis_db_t *db, const char *key) {
+  khash_t(redis_hash) *h = db->h;
   khiter_t k = kh_get(redis_hash, h, key);
   if (k != kh_end(h)) {
     RedisValue *value = kh_value(h, k);
     if (value->expiration > 0 && value->expiration < current_time_millis()) {
       // key value has expired, remove it
+      db->key_count--;
+      db->expiry_count--;
       if (value->type == TYPE_STRING) {
         free(value->data.str);
       }
@@ -83,12 +88,14 @@ static RedisValue *get_string(khash_t(redis_hash) * h, const char *key) {
   return NULL; // key not found
 }
 
-static bool exist(const char *key) {
+static bool exist(redis_db_t *db, const char *key) {
+  khash_t(redis_hash) *h = db->h;
   khiter_t k = kh_get(redis_hash, h, key);
   return k != kh_end(h) && kh_exist(h, k) ? true : false;
 }
 
-static void delete(const char *key) {
+static void delete(redis_db_t *db, const char *key) {
+  khash_t(redis_hash) *h = db->h;
   khiter_t k = kh_get(redis_hash, h, key);
 
   if (k != kh_end(h)) { // check if the key exists
@@ -103,19 +110,34 @@ static void delete(const char *key) {
     }
     free((char *)kh_key(h, k));
     kh_del(redis_hash, h, k);
+    db->key_count--;
   }
 }
 
-void redis_db_create() { create_redis_hash_table(); }
-void redis_db_destroy() { destroy_redis_hash(h); }
-void redis_db_set(const char *key, const void *value, ValueType type, long long expiration) {
-  set(h, key, value, type, expiration);
+redis_db_t *redis_db_create() {
+  redis_db_t *db = malloc(sizeof(redis_db_t));
+  if (!db) return NULL;
+  db->h = kh_init(redis_hash);
+  db->key_count = 0;
+  db->expiry_count = 0;
+  return db;
 }
-RedisValue *redis_db_get(const char *key) { return get_string(h, key); }
-bool redis_db_exist(const char *key) { return exist(key); }
-void redis_db_delete(const char *key) { return delete (key); }
-int redis_db_lpush(const char *key, const char *item, int *length) {
-  RedisValue *existing_value = redis_db_get(key);
+
+void redis_db_destroy(redis_db_t *db) {
+  if (!db) return;
+  destroy_redis_hash(db->h);
+  free(db);
+}
+
+void redis_db_set(redis_db_t *db, const char *key, const void *value, ValueType type,
+                  long long expiration) {
+  set(db, key, value, type, expiration);
+}
+RedisValue *redis_db_get(redis_db_t *db, const char *key) { return get(db, key); }
+bool redis_db_exist(redis_db_t *db, const char *key) { return exist(db, key); }
+void redis_db_delete(redis_db_t *db, const char *key) { return delete (db, key); }
+int redis_db_lpush(redis_db_t *db, const char *key, const char *item, int *length) {
+  RedisValue *existing_value = redis_db_get(db, key);
   List list;
   if (existing_value != NULL) {
     if (existing_value->type != TYPE_LIST) {
@@ -125,14 +147,14 @@ int redis_db_lpush(const char *key, const char *item, int *length) {
   } else {
     // if no existing value, create a new list
     list = create_list();
-    redis_db_set(key, list, TYPE_LIST, 0);
+    set(db, key, list, TYPE_LIST, -1);
   }
   lpush(list, item, length);
   return 0;
 }
 
-int redis_db_rpush(const char *key, const char *item, int *length) {
-  RedisValue *existing_value = redis_db_get(key);
+int redis_db_rpush(redis_db_t *db, const char *key, const char *item, int *length) {
+  RedisValue *existing_value = redis_db_get(db, key);
   List list;
   if (existing_value != NULL) {
     if (existing_value->type != TYPE_LIST) {
@@ -142,14 +164,15 @@ int redis_db_rpush(const char *key, const char *item, int *length) {
   } else {
     // if no existing value, create a new list
     list = create_list();
-    redis_db_set(key, list, TYPE_LIST, 0);
+    set(db, key, list, TYPE_LIST, 0);
   }
   rpush(list, item, length);
   return 0;
 }
 
-int redis_db_lrange(const char *key, int start, int end, char ***range, int *range_length) {
-  RedisValue *existing_value = redis_db_get(key);
+int redis_db_lrange(redis_db_t *db, const char *key, int start, int end, char ***range,
+                    int *range_length) {
+  RedisValue *existing_value = get(db, key);
   List list;
   if (existing_value != NULL) {
     if (existing_value->type != TYPE_LIST) {
@@ -165,3 +188,11 @@ int redis_db_lrange(const char *key, int start, int end, char ***range, int *ran
   *range = lrange(list, start, end, range_length);
   return 0;
 }
+
+bool redis_db_save(redis_db_t *db) {
+  return rdb_save_data_to_file(db, g_server_config.dir, g_server_config.dbfilename);
+}
+
+size_t redis_db_dbsize(redis_db_t *db) { return db->key_count; }
+
+size_t redis_db_expiry_count(redis_db_t *db) { return db->expiry_count; }

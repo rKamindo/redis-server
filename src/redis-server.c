@@ -12,16 +12,20 @@
 #include "client.h"
 #include "command_handler.h"
 #include "database.h"
+#include "rdb.h"
 #include "redis-server.h"
 #include "resp.h"
+#include "server_config.h"
 #include <errno.h>
 
 #define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
-
 #define MAX_PATH_LENGTH 256
-char dir[MAX_PATH_LENGTH] = "/tmp/redis-data"; // default directory for rdb persistence file
-char dbfilename[MAX_PATH_LENGTH] = "dump.rdb"; // default name for rdb persistence file
+
+server_config_t g_server_config = {
+  .dir = "/tmp/redis-data",
+  .dbfilename = "dump.rdb"
+};
 
 void process_client_input(Client *client, int epfd) {
   for (;;) {
@@ -102,14 +106,16 @@ volatile sig_atomic_t stop_server = 0;
 void sigint_handler(int sig) { stop_server = 1; }
 
 int start_server(int argc, char *argv[]) {
+  // printf("default directory: %s\n", g_server_config.dir);
+  // printf("default db filename: %s\n", g_server_config.dbfilename);
 
   // parse command-line args
   for (int i = 1; i < argc; i++) {
     if (i + 1 < argc) {
       if (strcmp(argv[i], "--dir") == 0) {
-        snprintf(dir, MAX_PATH_LENGTH, "%s", argv[i + 1]);
+        snprintf(g_server_config.dir, MAX_PATH_LENGTH, "%s", argv[i + 1]);
       } else if (strcmp(argv[i], "--dbfilename") == 0) {
-        snprintf(dbfilename, MAX_PATH_LENGTH, "%s", argv[i + 1]);
+        snprintf(g_server_config.dbfilename, MAX_PATH_LENGTH, "%s", argv[i + 1]);
       }
     }
   }
@@ -117,7 +123,9 @@ int start_server(int argc, char *argv[]) {
   // register the signal handler
   signal(SIGINT, sigint_handler);
 
-  redis_db_create();
+  redis_db_t *db = redis_db_create();
+
+  rdb_load_data_from_file(db, g_server_config.dir, g_server_config.dbfilename);
 
   struct sockaddr_in sa;
   int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -193,6 +201,7 @@ int start_server(int argc, char *argv[]) {
         }
 
         Client *client = create_client(ConnectFD, handler);
+        select_client_db(client, db);
         CommandHandler *command_handler = create_command_handler(client, 256, 10);
         parser_init(client->parser, handler, command_handler);
 
@@ -224,7 +233,7 @@ int start_server(int argc, char *argv[]) {
   }
   close(epfd);
   close(SocketFD);
-  redis_db_destroy();
+  redis_db_destroy(db);
   destroy_handler(handler);
   return EXIT_SUCCESS;
 }

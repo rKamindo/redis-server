@@ -1,27 +1,26 @@
 #include <gtest/gtest.h>
 extern "C" {
-#include "client.h"
-#include "command_handler.h"
-#include "commands.h"
-#include "database.h"
-
-extern char dir[256];
-extern char dbfilename[256];
+#include "../src/client.h"
+#include "../src/command_handler.h"
+#include "../src/database.h"
+#include "../src/server_config.h"
 }
 
+redis_db_t *db;
 
 class CommandTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    redis_db_create();
+    db = redis_db_create();
     client = create_client(-1, nullptr); // -1 as we don't need a real socket for tests
+    select_client_db(client, db);
     ch = create_command_handler(client, 1024, 10);
   }
 
   void TearDown() override {
     destroy_command_handler(ch);
     destroy_client(client);
-    redis_db_destroy();
+    redis_db_destroy(db);
   }
 
   void ExecuteCommand(const std::vector<std::string> &args) {
@@ -351,9 +350,15 @@ TEST_F(CommandTest, LrangeKeyNotFound) {
 }
 
 TEST_F(CommandTest, GetConfig) {
+  strcpy(g_server_config.dir, "testdir");
+  strcpy(g_server_config.dbfilename, "testdb.rdb");
+
   ExecuteCommand({"CONFIG", "GET", "dir"});
-  EXPECT_EQ(GetReply(), "*2\r\n$3\r\ndir\r\n$" + std::to_string(strlen(dir)) + "\r\n" + std::string(dir) + "\r\n");
+  EXPECT_EQ(GetReply(), "*2\r\n$3\r\ndir\r\n$" + std::to_string(strlen(g_server_config.dir)) +
+                            "\r\n" + std::string(g_server_config.dir) + "\r\n");
 
   ExecuteCommand({"CONFIG", "GET", "dbfilename"});
-  EXPECT_EQ(GetReply(), "*2\r\n$10\r\ndbfilename\r\n$" + std::to_string(strlen(dbfilename)) + "\r\n" + std::string(dbfilename) + "\r\n");
-} 
+  EXPECT_EQ(GetReply(), "*2\r\n$10\r\ndbfilename\r\n$" +
+                            std::to_string(strlen(g_server_config.dbfilename)) + "\r\n" +
+                            std::string(g_server_config.dbfilename) + "\r\n");
+}

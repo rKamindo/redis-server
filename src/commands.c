@@ -4,14 +4,12 @@
 #include "linked_list.h"
 #include "sys/time.h"
 #include "util.h"
+#include "server_config.h"
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #define MAX_PATH_LENGTH 256
-
-extern char dir[MAX_PATH_LENGTH];
-extern char dbfilename[MAX_PATH_LENGTH];
 
 void add_simple_string_reply(Client *client, const char *str) {
   write_begin_simple_string(client->output_buffer);
@@ -172,7 +170,7 @@ void handle_set(CommandHandler *ch) {
   // only get the existing value if we need to check conditions (NX, XX) or respond to GET
   // option
   if (options.nx || options.xx || options.get || options.keepttl) {
-    existing_value = redis_db_get(ch->args[1]);
+    existing_value = redis_db_get(ch->client->db, ch->args[1]);
     if (existing_value != NULL) {
       key_exists = true;
     }
@@ -194,7 +192,7 @@ void handle_set(CommandHandler *ch) {
     }
   }
 
-  redis_db_set(ch->args[1], ch->args[2], TYPE_STRING, expiration);
+  redis_db_set(ch->client->db, ch->args[1], ch->args[2], TYPE_STRING, expiration);
 
   if (options.get) {
     if (old_value) {
@@ -214,7 +212,7 @@ void handle_get(CommandHandler *ch) {
     return;
   }
 
-  RedisValue *redis_value = redis_db_get(ch->args[1]);
+  RedisValue *redis_value = redis_db_get(ch->client->db, ch->args[1]);
   if (redis_value == NULL) {
     add_null_reply(ch->client);
   } else if (redis_value->type != TYPE_STRING) {
@@ -232,7 +230,7 @@ void handle_exist(CommandHandler *ch) {
 
   int count = 0;
   for (int i = 1; i < ch->arg_count; i++) {
-    if (redis_db_exist(ch->args[i])) {
+    if (redis_db_exist(ch->client->db, ch->args[i])) {
       count += 1;
     }
   }
@@ -247,7 +245,7 @@ void handle_delete(CommandHandler *ch) {
   }
 
   for (int i = 1; i < ch->arg_count; i++) {
-    redis_db_delete(ch->args[i]);
+    redis_db_delete(ch->client->db, ch->args[i]);
   }
   add_simple_string_reply(ch->client, "OK");
 }
@@ -258,7 +256,7 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
     return;
   }
 
-  RedisValue *redis_value = redis_db_get(ch->args[1]);
+  RedisValue *redis_value = redis_db_get(ch->client->db, ch->args[1]);
   long current_value = 0;
 
   // check if the key exists and parse its value
@@ -279,7 +277,7 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
   snprintf(new_value_str, sizeof(new_value_str), "%ld", new_value);
 
   // set the new value in the database
-  redis_db_set(ch->args[1], new_value_str, TYPE_STRING, 0);
+  redis_db_set(ch->client->db, ch->args[1], new_value_str, TYPE_STRING, 0);
   add_integer_reply(ch->client, new_value);
 }
 
@@ -295,8 +293,8 @@ void handle_lpush(CommandHandler *ch) {
   const char *key = ch->args[1];
   int length = 0;
   for (int i = 2; i < ch->arg_count; i++) {
-    int result = redis_db_lpush(key, ch->args[i], &length); // capture the result
-    if (result == ERR_TYPE_MISMATCH) {                      // check for type mismatch error
+    int result = redis_db_lpush(ch->client->db, key, ch->args[i], &length); // capture the result
+    if (result == ERR_TYPE_MISMATCH) { // check for type mismatch error
       add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
       return;
     }
@@ -312,8 +310,8 @@ void handle_rpush(CommandHandler *ch) {
   const char *key = ch->args[1];
   int length = 0; // stores the length of the list after operation
   for (int i = 2; i < ch->arg_count; i++) {
-    int result = redis_db_rpush(key, ch->args[i], &length); //
-    if (result == ERR_TYPE_MISMATCH) {                      // check for type mismatch error
+    int result = redis_db_rpush(ch->client->db, key, ch->args[i], &length); //
+    if (result == ERR_TYPE_MISMATCH) { // check for type mismatch error
       add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
       return;
     }
@@ -335,7 +333,7 @@ void handle_lrange(CommandHandler *ch) {
   parse_integer(ch->args[2], &start);
   parse_integer(ch->args[3], &end);
 
-  int error = redis_db_lrange(list_key, start, end, &range, &range_length);
+  int error = redis_db_lrange(ch->client->db, list_key, start, end, &range, &range_length);
   if (error == ERR_TYPE_MISMATCH) { // check for type mismatch error
     add_error_reply(ch->client, "ERR Operation against a key holding the wrong kind of value");
     return;
@@ -360,10 +358,10 @@ void handle_config(CommandHandler *ch) {
       const char *param = ch->args[i + 2];
       if (strcmp(param, "dir") == 0) {
         response[response_index++] = "dir";
-        response[response_index++] = dir;
+        response[response_index++] = g_server_config.dir;
       } else if (strcmp(param, "dbfilename") == 0) {
         response[response_index++] = "dbfilename";
-        response[response_index++] = dbfilename;
+        response[response_index++] = g_server_config.dbfilename;
       } else {
         add_error_reply(ch->client, "ERR Unknown config parameter");
         return;
@@ -371,4 +369,23 @@ void handle_config(CommandHandler *ch) {
     }
     add_array_reply(ch->client, response, response_index);
   }
+}
+
+void handle_save(CommandHandler *ch) {
+  if (ch->arg_count != 1) {
+    add_error_reply(ch->client, "ERR wrong number of arguments for 'save' command");
+  }
+
+  redis_db_save(ch->client->db);
+
+  add_simple_string_reply(ch->client, "OK");
+}
+
+// gets the key count for the currently selected db
+void handle_dbsize(CommandHandler *ch) {
+  size_t dbsize = redis_db_dbsize(ch->client->db);
+
+  int size = (int)dbsize;
+
+  add_integer_reply(ch->client, size);
 }
