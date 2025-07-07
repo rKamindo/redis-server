@@ -9,7 +9,8 @@ This ongoing project is a lightweight Redis compatible server implementation in 
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
-- Support for the following Redis commands (PING, ECHO, SET (with options), GET, EXIST, DELETE, INCR, DECR, LPUSH, RPUSH)
+- Support for the following Redis commands (PING, ECHO, SET (with options), GET, EXIST, DELETE, INCR, DECR, LPUSH, RPUSH, SAVE)
+- Load database from disk on startup
 - GoogleTest for testing (unit tests and integration tests)
 - CMake for building
 
