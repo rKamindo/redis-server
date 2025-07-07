@@ -21,6 +21,9 @@ typedef enum {
   CMD_LPUSH,
   CMD_RPUSH,
   CMD_LRANGE,
+  CMD_CONFIG,
+  CMD_SAVE,
+  CMD_DBSIZE,
   CMD_UNKNOWN
 } CommandType;
 

@@ -1,4 +1,5 @@
 #include "client.h"
+#include "database.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +34,8 @@ Client *create_client(int fd, Handler *handler) {
 
   return client;
 }
+
+void select_client_db(Client *client, redis_db_t *db) { client->db = db; }
 
 void destroy_client(Client *client) {
   close(client->fd);

@@ -1,6 +1,7 @@
 #include "redis-server.h"
 
-int main() {
-  int status = start_server();
+int main(int argc, char **argv) {
+  printf("# redis_lite started\n");
+  int status = start_server(argc, argv);
   return status;
 }
