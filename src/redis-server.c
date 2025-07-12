@@ -246,6 +246,6 @@ int start_server(int argc, char *argv[]) {
   }
   redis_db_destroy(db);
   destroy_handler(handler);
-  printf("# redis_Lite is now ready to exit, bye bye...\n");
+  printf("# redis_lite is now ready to exit, bye bye...\n");
   return EXIT_SUCCESS;
 }
