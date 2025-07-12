@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include "arpa/inet.h"
 
 #include "client.h"
 #include "command_handler.h"
@@ -136,9 +137,11 @@ int start_server(int argc, char *argv[]) {
 
   memset(&sa, 0, sizeof sa);
 
+  const char *bind_address = "127.0.0.1";
+
   sa.sin_family = AF_INET;
   sa.sin_port = htons(DEFAULT_PORT);
-  sa.sin_addr.s_addr = htonl(INADDR_ANY);
+  inet_pton(AF_INET, bind_address, &(sa.sin_addr));
 
   // set SO_REUSEADDR option
   int opt = 1;
@@ -146,6 +149,8 @@ int start_server(int argc, char *argv[]) {
     perror("setsockopt");
     exit(EXIT_FAILURE);
   }
+
+  printf("# Creating Server TCP listening socket %s:%d\n", bind_address, ntohs(sa.sin_port));
 
   if (bind(SocketFD, (struct sockaddr *)&sa, sizeof sa) == -1) {
     perror("bind failed");
@@ -158,9 +163,7 @@ int start_server(int argc, char *argv[]) {
     close(SocketFD);
     exit(EXIT_FAILURE);
   }
-
-  printf("server started listening\n");
-
+ 
   int epfd = epoll_create(1);
   if (epfd == -1) {
     perror("epoll_create1 failed");
@@ -182,9 +185,10 @@ int start_server(int argc, char *argv[]) {
 
   Handler *handler = create_handler();
 
+  printf("# Ready to accept connections\n");
   for (;;) {
     num_events = epoll_wait(epfd, events, MAX_EVENTS, -1);
-    if (num_events == -1) {
+    if (num_events == -1 && errno != EINTR) {
       perror("epoll_wait failed");
       exit(EXIT_FAILURE);
     }
@@ -225,15 +229,23 @@ int start_server(int argc, char *argv[]) {
       } else {
         fprintf(stderr, "Unexpected event type: %d\n", events[i].events);
       }
+    }
 
-      if (stop_server) {
-        break;
-      }
+    if (stop_server) {
+      printf("# User requested shutdown...\n");
+      break;
     }
   }
   close(epfd);
   close(SocketFD);
+  // saves the currently selected db
+  // TODO when we support multiple databases, save all of the databases
+  printf("# Saving the final RDB snapshot before exiting.\n");
+  if (redis_db_save(db)) {
+    printf("# DB saved on disk");
+  }
   redis_db_destroy(db);
   destroy_handler(handler);
+  printf("# redis_lite is now ready to exit, bye bye...\n");
   return EXIT_SUCCESS;
 }
