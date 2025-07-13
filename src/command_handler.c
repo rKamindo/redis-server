@@ -36,6 +36,8 @@ CommandType get_command_type(char *command) {
     return CMD_SAVE;
   else if (strcmp(command, "DBSIZE") == 0)
     return CMD_DBSIZE;
+  else if (strcmp(command, "INFO" == 0))
+    return CMD_INFO;
   else
     return CMD_UNKNOWN;
 }
@@ -86,6 +88,9 @@ void handle_command(CommandHandler *ch) {
     break;
   case CMD_DBSIZE:
     handle_dbsize(ch);
+    break;
+  case CMD_INFO:
+    handle_info(ch);
     break;
   default:
     add_error_reply(ch->client, "ERR unknown command");

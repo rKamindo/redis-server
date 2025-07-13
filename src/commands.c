@@ -389,3 +389,8 @@ void handle_dbsize(CommandHandler *ch) {
 
   add_integer_reply(ch->client, size);
 }
+
+void handle_info(CommandHandler *ch) {
+  // only support the "role" key for now
+  add_bulk_string_reply(ch->client, "role:master");
+}
