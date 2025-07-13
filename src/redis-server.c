@@ -110,6 +110,8 @@ int start_server(int argc, char *argv[]) {
   // printf("default directory: %s\n", g_server_config.dir);
   // printf("default db filename: %s\n", g_server_config.dbfilename);
 
+  int port = DEFAULT_PORT;
+
   // parse command-line args
   for (int i = 1; i < argc; i++) {
     if (i + 1 < argc) {
@@ -117,6 +119,8 @@ int start_server(int argc, char *argv[]) {
         snprintf(g_server_config.dir, MAX_PATH_LENGTH, "%s", argv[i + 1]);
       } else if (strcmp(argv[i], "--dbfilename") == 0) {
         snprintf(g_server_config.dbfilename, MAX_PATH_LENGTH, "%s", argv[i + 1]);
+      } else if (strcmp(argv[i], "--port") == 0) {
+        port = atoi(argv[i + 1]);
       }
     }
   }
@@ -140,7 +144,7 @@ int start_server(int argc, char *argv[]) {
   const char *bind_address = "127.0.0.1";
 
   sa.sin_family = AF_INET;
-  sa.sin_port = htons(DEFAULT_PORT);
+  sa.sin_port = htons(port);
   inet_pton(AF_INET, bind_address, &(sa.sin_addr));
 
   // set SO_REUSEADDR option
