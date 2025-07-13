@@ -2,14 +2,15 @@
 #include "command_handler.h"
 #include "database.h"
 #include "linked_list.h"
+#include "server_config.h"
 #include "sys/time.h"
 #include "util.h"
-#include "server_config.h"
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #define MAX_PATH_LENGTH 256
+#define INFO_BUFFER_SIZE 2048 // a buffer for various INFO fields
 
 void add_simple_string_reply(Client *client, const char *str) {
   write_begin_simple_string(client->output_buffer);
@@ -392,7 +393,21 @@ void handle_dbsize(CommandHandler *ch) {
 
 void handle_info(CommandHandler *ch) {
   // only support the "role" key for now
-  char role_info[32];
-  snprintf(role_info, sizeof(role_info), "role: %s\r\n", g_server_info.role);
-  add_bulk_string_reply(ch->client, role_info);
+  char info_output_buffer[INFO_BUFFER_SIZE];
+  int current_offset;
+  current_offset += snprintf(info_output_buffer + current_offset,
+                             sizeof(info_output_buffer) - current_offset, "# Replication\r\n");
+
+  current_offset +=
+      snprintf(info_output_buffer + current_offset, sizeof(info_output_buffer) - current_offset,
+               "role:%s\r\n", g_server_info.role);
+
+  current_offset +=
+      snprintf(info_output_buffer + current_offset, sizeof(info_output_buffer) - current_offset,
+               "master_replid:%s\r\n", g_server_info.master_replid);
+
+  current_offset +=
+      snprintf(info_output_buffer + current_offset, sizeof(info_output_buffer) - current_offset,
+               "master_repl_offset:%lld\r\n", g_server_info.master_repl_offset);
+  add_bulk_string_reply(ch->client, info_output_buffer);
 }
