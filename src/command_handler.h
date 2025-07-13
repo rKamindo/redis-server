@@ -24,7 +24,8 @@ typedef enum {
   CMD_CONFIG,
   CMD_SAVE,
   CMD_DBSIZE,
-  CMD_UNKNOWN
+  CMD_INFO,
+  CMD_UNKNOWN,
 } CommandType;
 
 typedef struct CommandHandler {

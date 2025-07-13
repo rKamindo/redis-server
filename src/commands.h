@@ -26,6 +26,7 @@ void handle_lrange(CommandHandler *ch);
 void handle_config(CommandHandler *ch);
 void handle_save(CommandHandler *ch);
 void handle_dbsize(CommandHandler *ch);
+void handle_info(CommandHandler *ch);
 void add_error_reply(Client *client, const char *str);
 
 #endif // COMMAND_H
