@@ -6,6 +6,11 @@ typedef struct server_config {
   char dbfilename[256];
 } server_config_t;
 
+typedef struct server_info {
+  char role[16];
+} server_info_t;
+
 extern server_config_t g_server_config;
+extern server_info_t g_server_info;
 
 #endif // SERVER_CONFIG_H
