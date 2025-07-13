@@ -36,7 +36,7 @@ CommandType get_command_type(char *command) {
     return CMD_SAVE;
   else if (strcmp(command, "DBSIZE") == 0)
     return CMD_DBSIZE;
-  else if (strcmp(command, "INFO" == 0))
+  else if (strcmp(command, "INFO") == 0)
     return CMD_INFO;
   else
     return CMD_UNKNOWN;
