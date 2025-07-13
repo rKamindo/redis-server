@@ -8,6 +8,8 @@ typedef struct server_config {
 
 typedef struct server_info {
   char role[16];
+  char master_replid[40];
+  long long master_repl_offset;
 } server_info_t;
 
 extern server_config_t g_server_config;

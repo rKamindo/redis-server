@@ -25,7 +25,10 @@
 
 server_config_t g_server_config = {.dir = "/tmp/redis-data", .dbfilename = "dump.rdb"};
 
-server_info_t g_server_info = {.role = "master"};
+server_info_t g_server_info = {.role = "master",
+                               .master_replid =
+                                   "0000000000000000000000000000000000000000", // hard code for now
+                               .master_repl_offset = 0};
 
 void process_client_input(Client *client, int epfd) {
   for (;;) {
