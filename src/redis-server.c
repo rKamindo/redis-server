@@ -1,3 +1,4 @@
+#include "arpa/inet.h"
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <signal.h>
@@ -8,7 +9,6 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include "arpa/inet.h"
 
 #include "client.h"
 #include "command_handler.h"
@@ -23,10 +23,9 @@
 #define MAX_EVENTS 10000
 #define MAX_PATH_LENGTH 256
 
-server_config_t g_server_config = {
-  .dir = "/tmp/redis-data",
-  .dbfilename = "dump.rdb"
-};
+server_config_t g_server_config = {.dir = "/tmp/redis-data", .dbfilename = "dump.rdb"};
+
+server_info_t g_server_info = {.role = "master"};
 
 void process_client_input(Client *client, int epfd) {
   for (;;) {
@@ -114,13 +113,25 @@ int start_server(int argc, char *argv[]) {
 
   // parse command-line args
   for (int i = 1; i < argc; i++) {
-    if (i + 1 < argc) {
-      if (strcmp(argv[i], "--dir") == 0) {
+    if (strcmp(argv[i], "--dir") == 0) {
+      if (i + 1 < argc) {
         snprintf(g_server_config.dir, MAX_PATH_LENGTH, "%s", argv[i + 1]);
-      } else if (strcmp(argv[i], "--dbfilename") == 0) {
+        i++;
+      }
+    } else if (strcmp(argv[i], "--dbfilename") == 0) {
+      if (i + 1 < argc) {
         snprintf(g_server_config.dbfilename, MAX_PATH_LENGTH, "%s", argv[i + 1]);
-      } else if (strcmp(argv[i], "--port") == 0) {
+        i++;
+      }
+    } else if (strcmp(argv[i], "--port") == 0) {
+      if (i + 1 < argc) {
         port = atoi(argv[i + 1]);
+        i++;
+      }
+    } else if (strcmp(argv[i], "--replicaof") == 0) {
+      if (i + 2 < argc) {
+        strcpy(g_server_info.role, "slave");
+        i += 2;
       }
     }
   }
@@ -167,7 +178,7 @@ int start_server(int argc, char *argv[]) {
     close(SocketFD);
     exit(EXIT_FAILURE);
   }
- 
+
   int epfd = epoll_create(1);
   if (epfd == -1) {
     perror("epoll_create1 failed");

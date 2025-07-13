@@ -392,5 +392,7 @@ void handle_dbsize(CommandHandler *ch) {
 
 void handle_info(CommandHandler *ch) {
   // only support the "role" key for now
-  add_bulk_string_reply(ch->client, "role:master\r\n");
+  char role_info[32];
+  snprintf(role_info, sizeof(role_info), "role: %s\r\n", g_server_info.role);
+  add_bulk_string_reply(ch->client, role_info);
 }
