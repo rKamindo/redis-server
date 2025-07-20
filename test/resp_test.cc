@@ -13,7 +13,7 @@ protected:
   void SetUp() override {
     mock_handler = create_mock_handler();
     mock_ch = create_mock_command_handler();
-    parser_init(&parser, mock_handler, mock_ch);
+    parser_init(&parser, mock_ch);
   }
 
   void TearDown() override {

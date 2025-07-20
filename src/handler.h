@@ -19,6 +19,8 @@ typedef struct Handler {
   void (*end_integer)(struct CommandHandler *ch);
 } Handler;
 
+extern Handler *handler;
+
 Handler *create_handler();
 void destroy_handler(Handler *handler);
 

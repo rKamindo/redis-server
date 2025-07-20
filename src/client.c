@@ -1,18 +1,27 @@
 #include "client.h"
 #include "database.h"
+#include "redis-server.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #define RING_BUFFER_SIZE 65536
 
-Client *create_client(int fd, Handler *handler) {
+Client *create_client(int fd) {
   Client *client = malloc(sizeof(Client));
   if (!client) return NULL;
 
   client->fd = fd;
+  client->rdb_expected_bytes = 0;
+  client->rdb_written_bytes = 0;
+  client->rdb_received_bytes = 0;
+  client->rdb_file_size = 0;
+  client->rdb_file_offset = 0;
+  client->tmp_rdb_fp = NULL;
 
   // create a ring buffer of 64KB (adjust size as needed)
   if (rb_create(RING_BUFFER_SIZE, &client->input_buffer) != 0 ||
@@ -81,4 +90,110 @@ void flush_client_output(Client *client) {
 
     rb_read(client->output_buffer, bytes_sent);
   }
+}
+
+void process_client_input(Client *client) {
+  for (;;) {
+
+    char *write_buf;
+    size_t writable_len;
+
+    // get the writable portion of the ring buffer
+    if (rb_writable(client->input_buffer, &write_buf, &writable_len) != 0) {
+      fprintf(stderr, "failed to get writable buffer\n");
+      return;
+    }
+
+    if (writable_len == 0) {
+      fprintf(stderr, "input buffer full\n");
+      return;
+    }
+
+    // read from the socket into the writable portion of the ring buffer
+    ssize_t bytes_received = read(client->fd, write_buf, writable_len);
+
+    switch (bytes_received) {
+    case -1:
+      if (errno == EINTR) {
+        continue;
+      } else if (errno == EWOULDBLOCK) {
+        flush_client_output(client);
+        return;
+      } else {
+        perror("failed to read from client socket");
+        return;
+      }
+    case 0:
+      handle_client_disconnection(client);
+      fprintf(stderr, "client disconnected\n");
+      return;
+    default:
+      // update the write index of the ring buffer
+      if (rb_write(client->input_buffer, bytes_received) != 0) {
+        fprintf(stderr, "failed to update write index\n");
+        return;
+      }
+    }
+
+    char *read_buf;
+    size_t readable_len;
+
+    // get the readable portion of the ring buffer
+    if (rb_readable(client->input_buffer, &read_buf, &readable_len) != 0) {
+      fprintf(stderr, "failed to get readable buffer\n");
+      return;
+    }
+
+    const char *begin = read_buf;
+    const char *end = read_buf + readable_len;
+
+    size_t bytes_parsed = parser_parse(client->parser, begin, end) - begin;
+
+    if (rb_read(client->input_buffer, bytes_parsed)) {
+      fprintf(stderr, "failed to update read index\n");
+      return;
+    }
+
+    if (bytes_received < writable_len) {
+      flush_client_output(client);
+      return;
+    }
+  }
+}
+
+void handle_client_disconnection(Client *client) {
+  epoll_ctl(g_epoll_fd, EPOLL_CTL_DEL, client->fd, NULL);
+  destroy_client(client);
+}
+
+void client_enable_write_events(Client *client) {
+  if (!client) {
+    perror("client_enable_write_events: client pointer is null\n");
+    return;
+  }
+  struct epoll_event event;
+  event.events = client->epoll_events | EPOLLOUT;
+  event.data.fd = client->fd;
+  event.data.ptr = client;
+  if (epoll_ctl(g_epoll_fd, EPOLL_CTL_MOD, client->fd, &event) == -1) {
+    perror("epoll_ctl mod failed");
+    exit(EXIT_FAILURE);
+  }
+  client->epoll_events = event.events;
+}
+
+void client_disable_write_events(Client *client) {
+  if (!client) {
+    perror("client_disable_write_events: client pointer is null\n");
+    return;
+  }
+  struct epoll_event event;
+  event.events = client->epoll_events & ~EPOLLOUT;
+  event.data.fd = client->fd;
+  event.data.ptr = client;
+  if (epoll_ctl(g_epoll_fd, EPOLL_CTL_MOD, client->fd, &event) == -1) {
+    perror("epoll_ctl mod failed");
+    exit(EXIT_FAILURE);
+  }
+  client->epoll_events = event.events;
 }

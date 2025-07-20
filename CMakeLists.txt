@@ -13,6 +13,7 @@ add_executable(redis_lite
     src/util.c
     src/database.c
     src/rdb.c
+    src/replication.c
 )
 
 # GoogleTest requires at least C++14

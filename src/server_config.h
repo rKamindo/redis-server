@@ -4,6 +4,9 @@
 typedef struct server_config {
   char dir[256];
   char dbfilename[256];
+  char port[6];
+  char master_host[128];
+  char master_port[6];
 } server_config_t;
 
 typedef struct server_info {

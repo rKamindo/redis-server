@@ -1,25 +1,28 @@
 #include "rdb.h"
 #include "commands.h"
 #include "database.h"
-
-#include <stdint.h>
+#include "redis-server.h"
+#include "server_config.h"
+#include "util.h"
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <sys/sendfile.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 char *read_rdb_string(FILE *file);
 int write_rdb_string(FILE *file, const char *str);
-char *construct_file_path(const char *dir, const char *filename);
 
 int rdb_load_data_from_file(redis_db_t *db, const char *dir, const char *filename) {
   const char *path = construct_file_path(dir, filename);
   FILE *file = fopen(path, "rb");
   if (!file) {
-    perror("failed to open RDB file or it does not exist\n");
+    perror("failed to open RDB file or it does not exist");
     return -1;
   }
 
-  // consume header section, magic string + version number (ASCII): REDIS0011
+  // consume header section, magic string + version number (ASCII): REDIS0012
   char buf[64];
   if (fread(buf, 1, 9, file) != 9) {
     perror("failed to read header\n");
@@ -131,7 +134,8 @@ int rdb_load_data_from_file(redis_db_t *db, const char *dir, const char *filenam
           }
 
           // Debug print to verify key and value
-          // printf("RDB LOAD: key='%s', value='%s', expire_time=%llu\n", key, value, (unsigned long long)expire_time);
+          // printf("RDB LOAD: key='%s', value='%s', expire_time=%llu\n", key, value, (unsigned long
+          // long)expire_time);
 
           // insert in DB
           redis_db_set(db, key, value, TYPE_STRING, expire_time);
@@ -359,16 +363,153 @@ bool rdb_save_data_to_file(redis_db_t *db, const char *dir, const char *filename
   fputc(0xFF, file);
   // close file
   fclose(file);
+  return true;
 }
 
-char *construct_file_path(const char *dir, const char *filename) {
-  size_t path_len = strlen(dir) + strlen(filename) + 2; // +1 for '/' or '\0', +1 for '\0'
-  char *path = malloc(path_len);
-  if (!path) return NULL;
-  if (dir[strlen(dir) - 1] == '/') {
-    snprintf(path, path_len, "%s%s", dir, filename);
-  } else {
-    snprintf(path, path_len, "%s/%s", dir, filename);
+/*
+Sends the rdb snapshot to a replica, using the sendfile() syscall, which avoids copying into
+userspace.
+*/
+void master_send_rdb_snapshot(Client *client) {
+  if (!client->type == CLIENT_TYPE_REPLICA) {
+    perror("cannot send rdb file to a non-replica client\n");
+    return;
   }
-  return path;
+
+  size_t remaining_bytes = client->rdb_file_size - client->rdb_file_offset;
+  printf("remaining bytes is %ld\n", remaining_bytes);
+
+  while (1) {
+    ssize_t bytes_sent =
+        sendfile(client->fd, client->rdb_fd, &client->rdb_file_offset, remaining_bytes);
+    //  printf("bytes sent: %ld\n", bytes_sent);
+    if (bytes_sent == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        break;
+      } else if (errno == EINTR) {
+        continue;
+      } else {
+        perror("sendfile failed\n");
+        return;
+      }
+    } else if (bytes_sent == 0) {
+      break;
+    }
+  }
+
+  if (client->rdb_file_offset == client->rdb_file_size) {
+    printf("RDB file transmission complete for client %d\n", client->fd);
+    client_disable_write_events(client);
+    client->type = REPL_STATE_READY;
+  }
+}
+
+void replica_receive_rdb_snapshot(Client *client) {
+  fflush(stdout);
+  ssize_t bytes_read;
+
+  // open a temporary file for writing
+  if (client->tmp_rdb_fp == NULL) {
+    char *file_path = construct_file_path(g_server_config.dir, "temp_snapshot.rdb");
+    client->tmp_rdb_fp = fopen(file_path, "wb");
+    if (!client->tmp_rdb_fp) {
+      perror("could not open temporary RDB file for writing received snapshot\n");
+      return;
+    }
+    printf("opened temporary file: %s\n", file_path);
+    free(file_path);
+  }
+
+  // continusly read from socket into ring buffer
+  // and drain the ring buffer into the file. This loop will block
+  // when no data is available from the socket, or if the ring buffer is full
+  while (1) {
+    char *write_buf;
+    char *read_buf;
+    size_t writable_len;
+    size_t readable_len;
+
+    // if we haven't finished receiving all the messages
+    if (client->rdb_received_bytes < client->rdb_expected_bytes) {
+      // get the writable portion of the ring buffer
+      if (rb_writable(client->input_buffer, &write_buf, &writable_len) != 0) {
+        fprintf(stderr, "failed to get writable buffer\n");
+        return;
+      }
+
+      if (writable_len == 0) {
+        fprintf(stderr, "input buffer full\n");
+        return;
+      }
+
+      ssize_t remaining_bytes_to_read = client->rdb_expected_bytes - client->rdb_received_bytes;
+
+      bytes_read = read(client->fd, write_buf, remaining_bytes_to_read);
+
+      if (bytes_read == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          return;
+        } else if (errno == EINTR) {
+          continue;
+        } else {
+          perror("sendfile failed\n");
+          return;
+        }
+      } else if (bytes_read == 0) {
+        break;
+      }
+
+      if (rb_write(client->input_buffer, bytes_read)) {
+        fprintf(stderr, "failed to update write index\n");
+      }
+
+      client->rdb_received_bytes += bytes_read;
+
+      printf("receiving rdb data from master: read %ld bytes into input buffer\n", bytes_read);
+
+      if (bytes_read == 0) {
+        // master closed connection. signals end of RDB transfer
+        printf("master closed connection\n");
+        break;
+      } else if (bytes_read == -1) {
+        if (errno == EINTR)
+          continue; // interrupted retry
+        else {
+          perror("error reading from master socket.");
+          return;
+        }
+      }
+    }
+
+    if (rb_readable(client->input_buffer, &read_buf, &readable_len) != 0) {
+      fprintf(stderr, "failed to get readable buffer\n");
+      return;
+    }
+
+    if (readable_len == 0) {
+      fprintf(stderr, "input buffer empty, nothing to write to disk\n");
+    }
+
+    // write to disk
+    ssize_t bytes_written = fwrite(read_buf, 1, bytes_read, client->tmp_rdb_fp);
+
+    printf("writing rdb data from buffer: wrote %ld bytes into temp file\n", bytes_read);
+
+    client->rdb_written_bytes += bytes_written;
+    if (rb_read(client->input_buffer, bytes_written) != 0) {
+      fprintf(stderr, "error updating read index for ring buffer\n");
+    }
+
+    if (client->rdb_written_bytes == client->rdb_expected_bytes) {
+      printf("RDB snapshot completely received and written to temp file: %lld bytes.\n",
+             client->rdb_expected_bytes);
+
+      fclose(client->tmp_rdb_fp);
+
+      rdb_load_data_from_file(client->db, g_server_config.dir, "temp_snapshot.rdb");
+
+      client->repl_client_state = REPL_STATE_READY;
+      return;
+    }
+  }
 }

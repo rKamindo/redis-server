@@ -7,6 +7,8 @@
 #include "command_handler.h"
 #include "commands.h"
 
+void add_error_reply(ring_buffer, const char *str);
+
 CommandType get_command_type(char *command) {
   if (strcmp(command, "PING") == 0)
     return CMD_PING;
@@ -38,7 +40,15 @@ CommandType get_command_type(char *command) {
     return CMD_DBSIZE;
   else if (strcmp(command, "INFO") == 0)
     return CMD_INFO;
-  else
+  else if (strcmp(command, "REPLCONF") == 0) {
+    printf("RECEIVED REPLCONF\n");
+    fflush(stdout);
+    return CMD_REPLCONF;
+  } else if (strcmp(command, "PSYNC") == 0) {
+    printf("RECEIVED PSYNC\n");
+    fflush(stdout);
+    return CMD_PSYNC;
+  } else
     return CMD_UNKNOWN;
 }
 
@@ -92,8 +102,14 @@ void handle_command(CommandHandler *ch) {
   case CMD_INFO:
     handle_info(ch);
     break;
+  case CMD_REPLCONF:
+    handle_replconf(ch);
+    break;
+  case CMD_PSYNC:
+    handle_psync(ch);
+    break;
   default:
-    add_error_reply(ch->client, "ERR unknown command");
+    add_error_reply(ch->client->output_buffer, "ERR unknown command");
     break;
   }
 }
@@ -207,7 +223,22 @@ void chars_handler(CommandHandler *ch, const char *begin, const char *end) {
   ch->buf_used += len;
 }
 
-void unimplemented() { perror("unimplemented"); }
+void begin_simple_string_handler(CommandHandler *ch) { ch->buf_used = 0; }
+
+void end_simple_string_handler(CommandHandler *ch) {
+  if (ch->buf_used < ch->buf_size) {
+    ch->buf[ch->buf_used] = '\0';
+  } else {
+    fprintf(stderr, "Error: Simple string buffer too small for null terminator.\n");
+    ch->client->repl_client_state = REPL_STATE_ERROR;
+    return;
+  }
+
+  printf("received: %s\n", ch->buf);
+  handle_simple_string_reply(ch);
+}
+
+void unimplemented(CommandHandler *ch) { perror("unimplemented"); }
 
 // create handler interface for the parser
 Handler *create_handler() {
@@ -225,8 +256,8 @@ Handler *create_handler() {
   handler->chars = chars_handler;
 
   // set unused handler functions to an unimplemented function
-  handler->begin_simple_string = unimplemented;
-  handler->end_simple_string = unimplemented;
+  handler->begin_simple_string = begin_simple_string_handler;
+  handler->end_simple_string = end_simple_string_handler;
   handler->begin_error = unimplemented;
   handler->end_error = unimplemented;
   handler->begin_integer = unimplemented;
