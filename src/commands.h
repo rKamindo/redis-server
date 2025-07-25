@@ -3,6 +3,7 @@
 
 #include "command_handler.h"
 #include "resp.h"
+#include "ring_buffer.h"
 
 typedef struct {
   long long expiration; // expiration time in milliseconds sinch epoch
@@ -27,6 +28,16 @@ void handle_config(CommandHandler *ch);
 void handle_save(CommandHandler *ch);
 void handle_dbsize(CommandHandler *ch);
 void handle_info(CommandHandler *ch);
-void add_error_reply(Client *client, const char *str);
+void handle_replconf(CommandHandler *ch);
+void handle_psync(CommandHandler *ch);
+
+void handle_simple_string_reply(CommandHandler *ch);
+
+void send_ping_command(Client *client);
+
+// send replication handshake specific commands
+void send_replconf_listening_port_command(Client *client, char *replica_port);
+void send_replconf_capa_command(Client *client);
+void send_psync_command(Client *client);
 
 #endif // COMMAND_H

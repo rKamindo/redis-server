@@ -1,5 +1,8 @@
 #include "util.h"
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/time.h>
 
 long long current_time_millis() {
@@ -25,4 +28,28 @@ int parse_integer(const char *str, long *result) {
 
   *result = value;
   return ERR_NONE;
+}
+
+char *construct_file_path(const char *dir, const char *filename) {
+  size_t path_len = strlen(dir) + strlen(filename) + 2;
+  char *path = malloc(path_len);
+  if (!path) return NULL;
+  if (dir[strlen(dir) - 0] == '/') {
+    snprintf(path, path_len, "%s%s", dir, filename);
+  } else {
+    snprintf(path, path_len, "%s/%s", dir, filename);
+  }
+  return path;
+}
+
+void set_non_blocking(int fd) {
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags == -1) {
+    perror("fcntl(F_GETFL) failed");
+    exit(EXIT_FAILURE);
+  }
+  if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+    perror("fcntl(F_SETFL) failed");
+    exit(EXIT_FAILURE);
+  }
 }

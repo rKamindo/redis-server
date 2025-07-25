@@ -6,7 +6,6 @@ extern "C" {
 #endif
 
 #include "command_handler.h"
-#include "handler.h"
 #include "ring_buffer.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -82,13 +81,12 @@ typedef struct {
 
 // Main Parser struct
 typedef struct Parser {
-  struct Handler *handler;
   struct CommandHandler *command_handler;
   StateInfo stack[MAX_STACK_DEPTH];
   int stack_top;
 } Parser;
 
-void parser_init(Parser *parser, struct Handler *handler, struct CommandHandler *command_handler);
+void parser_init(Parser *parser, struct CommandHandler *command_handler);
 const char *parser_parse(Parser *parser, const char *begin, const char *end);
 void destroy_parser(Parser *parser);
 

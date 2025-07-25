@@ -1,4 +1,17 @@
+#include "redis-server.h"
 #include "arpa/inet.h"
+#include "client.h"
+#include "command_handler.h"
+#include "commands.h"
+#include "database.h"
+#include "rdb.h"
+#include "replication.h"
+#include "resp.h"
+#include "ring_buffer.h"
+#include "server_config.h"
+#include "util.h"
+#include <errno.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <signal.h>
@@ -10,15 +23,6 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "client.h"
-#include "command_handler.h"
-#include "database.h"
-#include "rdb.h"
-#include "redis-server.h"
-#include "resp.h"
-#include "server_config.h"
-#include <errno.h>
-
 #define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
 #define MAX_PATH_LENGTH 256
@@ -27,92 +31,23 @@ server_config_t g_server_config = {.dir = "/tmp/redis-data", .dbfilename = "dump
 
 server_info_t g_server_info = {.role = "master",
                                .master_replid =
-                                   "0000000000000000000000000000000000000000", // hard code for now
+                                   "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", // hard code for now
                                .master_repl_offset = 0};
 
-void process_client_input(Client *client, int epfd) {
-  for (;;) {
-
-    char *write_buf;
-    size_t writable_len;
-
-    // get the writable portion of the ring buffer
-    if (rb_writable(client->input_buffer, &write_buf, &writable_len) != 0) {
-      fprintf(stderr, "failed to get writable buffer\n");
-      return;
-    }
-
-    if (writable_len == 0) {
-      fprintf(stderr, "input buffer full\n");
-      return;
-    }
-
-    // read from the socket into the writable portion of the ring buffer
-    ssize_t bytes_received = read(client->fd, write_buf, writable_len);
-
-    switch (bytes_received) {
-    case -1:
-      if (errno == EINTR) {
-        continue;
-      } else if (errno == EWOULDBLOCK) {
-        flush_client_output(client);
-        return;
-      } else {
-        perror("failed to read from client socket");
-        return;
-      }
-    case 0:
-      handle_client_disconnection(client, epfd);
-      fprintf(stderr, "client disconnected\n");
-      return;
-    default:
-      // update the write index of the ring buffer
-      if (rb_write(client->input_buffer, bytes_received) != 0) {
-        fprintf(stderr, "failed to update write index\n");
-        return;
-      }
-    }
-
-    char *read_buf;
-    size_t readable_len;
-
-    // get the readable portion of the ring buffer
-    if (rb_readable(client->input_buffer, &read_buf, &readable_len) != 0) {
-      fprintf(stderr, "failed to get readable buffer\n");
-      return;
-    }
-
-    const char *begin = read_buf;
-    const char *end = read_buf + readable_len;
-
-    size_t bytes_parsed = parser_parse(client->parser, begin, end) - begin;
-
-    if (rb_read(client->input_buffer, bytes_parsed)) {
-      fprintf(stderr, "failed to update read index\n");
-      return;
-    }
-
-    if (bytes_received < writable_len) {
-      flush_client_output(client);
-      return;
-    }
-  }
-}
-
-void handle_client_disconnection(Client *client, int epfd) {
-  epoll_ctl(epfd, EPOLL_CTL_DEL, client->fd, NULL);
-  destroy_client(client);
-}
-
+int g_epoll_fd; // epollfd global
+int port = DEFAULT_PORT;
 volatile sig_atomic_t stop_server = 0;
 
 void sigint_handler(int sig) { stop_server = 1; }
 
 int start_server(int argc, char *argv[]) {
-  // printf("default directory: %s\n", g_server_config.dir);
-  // printf("default db filename: %s\n", g_server_config.dbfilename);
-
-  int port = DEFAULT_PORT;
+  handler = create_handler();
+  redis_db_t *db = redis_db_create();
+  g_epoll_fd = epoll_create(1);
+  if (g_epoll_fd == -1) {
+    perror("epoll_create failed");
+    exit(EXIT_FAILURE);
+  }
 
   // parse command-line args
   for (int i = 1; i < argc; i++) {
@@ -128,23 +63,92 @@ int start_server(int argc, char *argv[]) {
       }
     } else if (strcmp(argv[i], "--port") == 0) {
       if (i + 1 < argc) {
+        strcpy(g_server_config.port, argv[i + 1]);
         port = atoi(argv[i + 1]);
         i++;
       }
     } else if (strcmp(argv[i], "--replicaof") == 0) {
       if (i + 2 < argc) {
         strcpy(g_server_info.role, "slave");
+        strcpy(g_server_config.master_host, argv[i + 1]);
+        strcpy(g_server_config.master_port, argv[i + 2]);
         i += 2;
       }
+    }
+  }
+
+  if (strcmp(g_server_info.role, "slave") == 0) {
+    int master_fd;
+    char port_str[6];
+
+    // resolve address
+    struct addrinfo hints, *res;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    int status =
+        getaddrinfo(g_server_config.master_host, g_server_config.master_port, &hints, &res);
+    if (status != 0) {
+      fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+      exit(EXIT_FAILURE);
+    }
+
+    // loop through all the results and connect to the first one we can
+    bool connected = false;
+    struct addrinfo *p;
+    for (p = res; p != NULL; p = p->ai_next) {
+
+      // create socket
+      master_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+      if (master_fd == -1) {
+        perror("cannot create socket for master connection");
+        exit(EXIT_FAILURE);
+      }
+
+      // connect to master
+      if (connect(master_fd, p->ai_addr, p->ai_addrlen) == -1) {
+        close(master_fd);
+        continue;
+      }
+
+      connected = true;
+      break;
+    }
+
+    freeaddrinfo(res);
+
+    if (!connected) {
+      perror("Replica: failed to connect to master...\n");
+      exit(EXIT_FAILURE);
+    }
+
+    Client *master_client = create_client(master_fd);
+    set_non_blocking(master_fd);
+    master_client->db = db;
+    master_client->type = CLIENT_TYPE_MASTER;
+    master_client->repl_client_state = REPL_STATE_CONNECTING;
+
+    CommandHandler *command_handler = create_command_handler(master_client, 256, 10);
+    parser_init(master_client->parser, command_handler);
+
+    struct epoll_event event;
+    event.events = EPOLLIN | EPOLLOUT;
+    event.data.fd = master_fd;
+    event.data.ptr = master_client;
+
+    if (epoll_ctl(g_epoll_fd, EPOLL_CTL_ADD, master_fd, &event) == -1) {
+      perror("epoll_ctl for master_fd failed");
+      exit(EXIT_FAILURE);
     }
   }
 
   // register the signal handler
   signal(SIGINT, sigint_handler);
 
-  redis_db_t *db = redis_db_create();
-
-  rdb_load_data_from_file(db, g_server_config.dir, g_server_config.dbfilename);
+  if (strcmp(g_server_info.role, "slave") != 0) {
+    // for now only load file if it is not a replica
+    rdb_load_data_from_file(db, g_server_config.dir, g_server_config.dbfilename);
+  }
 
   struct sockaddr_in sa;
   int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -182,18 +186,13 @@ int start_server(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  int epfd = epoll_create(1);
-  if (epfd == -1) {
-    perror("epoll_create1 failed");
-    exit(EXIT_FAILURE);
-  }
+  set_non_blocking(SocketFD);
 
   struct epoll_event event;
   event.events = EPOLLIN; // EPOLLIN is the flag for read events
-  // event.data.fd = SocketFD;
   event.data.ptr = NULL;
 
-  if (epoll_ctl(epfd, EPOLL_CTL_ADD, SocketFD, &event) == -1) {
+  if (epoll_ctl(g_epoll_fd, EPOLL_CTL_ADD, SocketFD, &event) == -1) {
     perror("epoll_ctl failed");
     exit(EXIT_FAILURE);
   }
@@ -201,11 +200,9 @@ int start_server(int argc, char *argv[]) {
   struct epoll_event events[MAX_EVENTS];
   int num_events;
 
-  Handler *handler = create_handler();
-
   printf("# Ready to accept connections\n");
   for (;;) {
-    num_events = epoll_wait(epfd, events, MAX_EVENTS, -1);
+    num_events = epoll_wait(g_epoll_fd, events, MAX_EVENTS, -1);
     if (num_events == -1 && errno != EINTR) {
       perror("epoll_wait failed");
       exit(EXIT_FAILURE);
@@ -214,6 +211,7 @@ int start_server(int argc, char *argv[]) {
     // iterate through the events
     for (int i = 0; i < num_events; i++) {
       struct epoll_event *current_event = &events[i];
+      Client *client = (Client *)current_event->data.ptr;
       if (!current_event->data.ptr) { // server socket is ready, new connection
         int ConnectFD = accept(SocketFD, NULL, NULL);
         if (ConnectFD == -1) {
@@ -222,28 +220,37 @@ int start_server(int argc, char *argv[]) {
           exit(EXIT_FAILURE);
         }
 
-        Client *client = create_client(ConnectFD, handler);
-        select_client_db(client, db);
-        CommandHandler *command_handler = create_command_handler(client, 256, 10);
-        parser_init(client->parser, handler, command_handler);
+        set_non_blocking(ConnectFD);
+
+        Client *new_client = create_client(ConnectFD);
+
+        new_client->type = CLIENT_TYPE_REGULAR;
+        select_client_db(new_client, db);
+        CommandHandler *command_handler = create_command_handler(new_client, 256, 10);
+        parser_init(new_client->parser, command_handler);
 
         int optval = 1;
         setsockopt(ConnectFD, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
         event.events = EPOLLIN;
+        new_client->epoll_events = event.events;
         event.data.fd = ConnectFD;
-        event.data.ptr = client;
+        event.data.ptr = new_client;
 
-        if (epoll_ctl(epfd, EPOLL_CTL_ADD, ConnectFD, &event) == -1) {
+        if (epoll_ctl(g_epoll_fd, EPOLL_CTL_ADD, ConnectFD, &event) == -1) {
           perror("epoll_ctl failed");
           exit(EXIT_FAILURE);
         }
       } else if (events[i].events & EPOLLIN) {
-        Client *client = (Client *)current_event->data.ptr;
-        process_client_input(client, epfd);
+        process_client_input(client);
+      } else if (events[i].events & EPOLLOUT) {
+        if (client->type == CLIENT_TYPE_REPLICA) {
+          master_handle_replica_out(client);
+        } else if (client->type == CLIENT_TYPE_MASTER) {
+          replica_handle_master_data(client);
+        }
       } else if (events[i].events & EPOLLHUP | EPOLLERR) {
-        Client *client = (Client *)current_event->data.ptr;
-        handle_client_disconnection(client, epfd);
+        handle_client_disconnection(client);
       } else {
         fprintf(stderr, "Unexpected event type: %d\n", events[i].events);
       }
@@ -254,13 +261,13 @@ int start_server(int argc, char *argv[]) {
       break;
     }
   }
-  close(epfd);
+  close(g_epoll_fd);
   close(SocketFD);
   // saves the currently selected db
   // TODO when we support multiple databases, save all of the databases
   printf("# Saving the final RDB snapshot before exiting.\n");
   if (redis_db_save(db)) {
-    printf("# DB saved on disk");
+    printf("# DB saved on disk\n");
   }
   redis_db_destroy(db);
   destroy_handler(handler);

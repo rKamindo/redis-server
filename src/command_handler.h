@@ -26,6 +26,8 @@ typedef enum {
   CMD_DBSIZE,
   CMD_INFO,
   CMD_UNKNOWN,
+  CMD_REPLCONF,
+  CMD_PSYNC
 } CommandType;
 
 typedef struct CommandHandler {

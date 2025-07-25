@@ -1,4 +1,6 @@
 extern "C" {
+#include "client.h"
+#include "handler.h"
 #include "mock_handler.h"
 #include "resp.h"
 }
@@ -6,19 +8,17 @@ extern "C" {
 
 class ParseTest : public ::testing::Test {
 protected:
-  Handler *mock_handler;
   CommandHandler *mock_ch;
   Parser parser;
-
   void SetUp() override {
-    mock_handler = create_mock_handler();
+    g_handler = create_mock_handler();
     mock_ch = create_mock_command_handler();
-    parser_init(&parser, mock_handler, mock_ch);
+    parser_init(&parser, mock_ch);
   }
 
   void TearDown() override {
-    destroy_mock_handler(mock_handler);
     destroy_mock_command_handler(mock_ch);
+    destroy_mock_handler(g_handler);
   }
 };
 

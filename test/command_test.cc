@@ -12,7 +12,7 @@ class CommandTest : public ::testing::Test {
 protected:
   void SetUp() override {
     db = redis_db_create();
-    client = create_client(-1, nullptr); // -1 as we don't need a real socket for tests
+    client = create_client(-1); // -1 as we don't need a real socket for tests
     select_client_db(client, db);
     ch = create_command_handler(client, 1024, 10);
   }

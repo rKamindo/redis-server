@@ -1,6 +1,7 @@
 #ifndef HANDLER_H
 #define HANDLER_H
 
+#include "command_handler.h"
 #include <stdint.h>
 
 struct CommandHandler;
@@ -18,6 +19,8 @@ typedef struct Handler {
   void (*begin_integer)(struct CommandHandler *ch);
   void (*end_integer)(struct CommandHandler *ch);
 } Handler;
+
+extern Handler *g_handler;
 
 Handler *create_handler();
 void destroy_handler(Handler *handler);

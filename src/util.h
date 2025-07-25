@@ -12,4 +12,6 @@
 
 long long current_time_millis();
 int parse_integer(const char *str, long *result);
+char *construct_file_path(const char *dir, const char *filename);
+void set_non_blocking(int fd);
 #endif // UTIL_H
