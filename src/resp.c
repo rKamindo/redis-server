@@ -229,23 +229,23 @@ ParseResult parse_initial(Parser *parser, const char *begin, const char *end) {
 
   switch (*begin) {
   case '+':
-    handler->begin_simple_string(parser->command_handler);
-    push_state(parser, STATE_SIMPLE, 0, parse_simple, handler->end_simple_string);
+    g_handler->begin_simple_string(parser->command_handler);
+    push_state(parser, STATE_SIMPLE, 0, parse_simple, g_handler->end_simple_string);
     break;
   case '-':
-    handler->begin_error(parser->command_handler);
-    push_state(parser, STATE_SIMPLE, 0, parse_simple, handler->end_error);
+    g_handler->begin_error(parser->command_handler);
+    push_state(parser, STATE_SIMPLE, 0, parse_simple, g_handler->end_error);
     break;
   case ':':
-    push_state(parser, STATE_SIMPLE, 0, parse_simple, handler->end_integer);
-    handler->begin_integer(parser->command_handler);
+    push_state(parser, STATE_SIMPLE, 0, parse_simple, g_handler->end_integer);
+    g_handler->begin_integer(parser->command_handler);
     break;
   case '$':
-    push_state(parser, STATE_BULK_STRING_LENGTH, 0, parse_length, handler->end_bulk_string);
+    push_state(parser, STATE_BULK_STRING_LENGTH, 0, parse_length, g_handler->end_bulk_string);
     // don't call begin_bulk_string yet, we need the length first
     break;
   case '*':
-    push_state(parser, STATE_ARRAY_LENGTH, 0, parse_length, handler->end_array);
+    push_state(parser, STATE_ARRAY_LENGTH, 0, parse_length, g_handler->end_array);
     // don't call begin_array yet, we need the length first
     break;
 
@@ -265,7 +265,7 @@ ParseResult parse_simple(Parser *parser, const char *begin, const char *end) {
   }
 
   // process the characters up to CR
-  handler->chars(parser->command_handler, begin, pos);
+  g_handler->chars(parser->command_handler, begin, pos);
 
   if (end - pos < 2) {
     return (ParseResult){false, pos};
@@ -308,13 +308,14 @@ ParseResult parse_length(Parser *parser, const char *begin, const char *end) {
   if (parser->stack[parser->stack_top].type == STATE_ARRAY_LENGTH) {
     // remove the length state
     pop_state(parser);
-    handler->begin_array(parser->command_handler, int_length);
-    push_state(parser, STATE_ARRAY, int_length, parse_array, handler->end_array);
+    g_handler->begin_array(parser->command_handler, int_length);
+    push_state(parser, STATE_ARRAY, int_length, parse_array, g_handler->end_array);
   } else if (parser->stack[parser->stack_top].type == STATE_BULK_STRING_LENGTH) {
     // remove the length state
     pop_state(parser);
-    handler->begin_bulk_string(parser->command_handler, int_length);
-    push_state(parser, STATE_BULK_STRING, int_length, parse_bulk_string, handler->end_bulk_string);
+    g_handler->begin_bulk_string(parser->command_handler, int_length);
+    push_state(parser, STATE_BULK_STRING, int_length, parse_bulk_string,
+               g_handler->end_bulk_string);
   } else {
     // unexpected state
     return (ParseResult){false, begin};
@@ -330,7 +331,7 @@ ParseResult parse_bulk_string(Parser *parser, const char *begin, const char *end
   int64_t length = parser->stack[parser->stack_top].length;
 
   if (length == -1) {
-    handler->end_bulk_string(parser->command_handler);
+    g_handler->end_bulk_string(parser->command_handler);
     pop_state(parser);
     return (ParseResult){true, begin};
   }
@@ -341,11 +342,11 @@ ParseResult parse_bulk_string(Parser *parser, const char *begin, const char *end
 
   int64_t input_length = end - begin;
   int64_t output_length = min(length, input_length);
-  handler->chars(parser->command_handler, begin, begin + output_length);
+  g_handler->chars(parser->command_handler, begin, begin + output_length);
   length -= output_length;
 
   if (length == 0 && input_length >= output_length + 2) {
-    handler->end_bulk_string(parser->command_handler);
+    g_handler->end_bulk_string(parser->command_handler);
     pop_state(parser);
     return (ParseResult){true, begin + output_length + 2};
   } else {
@@ -357,7 +358,7 @@ ParseResult parse_array(Parser *parser, const char *begin, const char *end) {
   int64_t length = parser->stack[parser->stack_top].length;
 
   if (length == 0 || length == -1) {
-    handler->end_array(parser->command_handler);
+    g_handler->end_array(parser->command_handler);
     pop_state(parser);
     return (ParseResult){true, begin};
   }
@@ -405,7 +406,7 @@ ParseResult parse_inline_command(Parser *parser, const char *begin, const char *
 
   if (pos != end) {
     size_t token_count = count_tokens(begin); // count tokens
-    handler->begin_array(parser->command_handler, token_count);
+    g_handler->begin_array(parser->command_handler, token_count);
 
     // process characters up to CR
     const char *token_start = begin;
@@ -432,9 +433,9 @@ ParseResult parse_inline_command(Parser *parser, const char *begin, const char *
       }
 
       size_t token_length = token_end - token_start;
-      handler->begin_bulk_string(parser->command_handler, token_length);
-      handler->chars(parser->command_handler, token_start, token_end);
-      handler->end_bulk_string(parser->command_handler);
+      g_handler->begin_bulk_string(parser->command_handler, token_length);
+      g_handler->chars(parser->command_handler, token_start, token_end);
+      g_handler->end_bulk_string(parser->command_handler);
 
       token_start = (token_end < pos) ? token_end + 1 : token_end;
 
@@ -444,7 +445,7 @@ ParseResult parse_inline_command(Parser *parser, const char *begin, const char *
       }
     }
 
-    handler->end_array(parser->command_handler);
+    g_handler->end_array(parser->command_handler);
     pop_state(parser);
     return (ParseResult){true, pos + 2};
   } else {

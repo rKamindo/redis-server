@@ -15,59 +15,59 @@
 #define MAX_PATH_LENGTH 256
 #define INFO_BUFFER_SIZE 2048 // a buffer for various INFO fields
 
-void add_simple_string_reply(ring_buffer rb, const char *str) {
-  write_begin_simple_string(rb);
-  write_chars(rb, str);
-  write_end_simple_string(rb);
+void add_simple_string_reply(Client *client, const char *str) {
+  write_begin_simple_string(client->output_buffer);
+  write_chars(client->output_buffer, str);
+  write_end_simple_string(client->output_buffer);
 }
 
-void add_bulk_string_reply(ring_buffer rb, const char *str) {
+void add_bulk_string_reply(Client *client, const char *str) {
   int64_t len = strlen(str);
-  write_begin_bulk_string(rb, len);
-  write_chars(rb, str);
-  write_end_bulk_string(rb);
+  write_begin_bulk_string(client->output_buffer, len);
+  write_chars(client->output_buffer, str);
+  write_end_bulk_string(client->output_buffer);
 }
 
-void add_array_reply(ring_buffer rb, char **array, int length) {
-  write_begin_array(rb, length);
+void add_array_reply(Client *client, char **array, int length) {
+  write_begin_array(client->output_buffer, length);
   if (array != NULL) {
     for (int i = 0; i < length; i++) {
       int64_t len = strlen(array[i]);
-      write_begin_bulk_string(rb, len);
-      write_chars(rb, array[i]);
-      write_end_bulk_string(rb);
+      write_begin_bulk_string(client->output_buffer, len);
+      write_chars(client->output_buffer, array[i]);
+      write_end_bulk_string(client->output_buffer);
     }
   }
-  write_end_array(rb);
+  write_end_array(client->output_buffer);
 }
 
-void add_null_reply(ring_buffer rb) {
-  write_begin_bulk_string(rb, -1); // indicate that this is a null bulk string
-  write_end_bulk_string(rb);
+void add_null_reply(Client *client) {
+  write_begin_bulk_string(client->output_buffer, -1); // indicate that this is a null bulk string
+  write_end_bulk_string(client->output_buffer);
 }
 
-void add_error_reply(ring_buffer rb, const char *str) {
-  write_begin_error(rb);
-  write_chars(rb, str);
-  write_end_error(rb);
+void add_error_reply(Client *client, const char *str) {
+  write_begin_error(client->output_buffer);
+  write_chars(client->output_buffer, str);
+  write_end_error(client->output_buffer);
 }
 
-void add_integer_reply(ring_buffer rb, int integer) {
+void add_integer_reply(Client *client, int integer) {
   char number_str[32];
   snprintf(number_str, sizeof(number_str), "%d", integer);
 
-  write_begin_integer(rb);
-  write_chars(rb, number_str);
-  write_end_integer(rb);
+  write_begin_integer(client->output_buffer);
+  write_chars(client->output_buffer, number_str);
+  write_end_integer(client->output_buffer);
 }
 
-void add_psync_reply(ring_buffer rb, char *master_replid, long long master_repl_offset) {
+void add_psync_reply(Client *client, char *master_replid, long long master_repl_offset) {
   printf("add_psync_reply called with master_replid: %s, master_repl_offset: %lld\n", master_replid,
          master_repl_offset);
   fflush(stdout);
   char full_resync_reply[80];
   snprintf(full_resync_reply, 80, "FULLRESYNC %s %lld", master_replid, master_repl_offset);
-  add_simple_string_reply(rb, full_resync_reply);
+  add_simple_string_reply(client, full_resync_reply);
 }
 
 /*
@@ -140,27 +140,27 @@ void handle_ping(CommandHandler *ch) {
   fflush(stdout);
   Client *client = ch->client;
   if (ch->arg_count == 1) {
-    add_simple_string_reply(client->output_buffer, "PONG");
+    add_simple_string_reply(client, "PONG");
   } else if (ch->arg_count == 2) {
-    add_simple_string_reply(client->output_buffer, ch->args[1]);
+    add_simple_string_reply(client, ch->args[1]);
   } else {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'ping' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'ping' command");
   }
 }
 
 void handle_echo(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count != 2) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'echo' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'echo' command");
     return;
   }
-  add_simple_string_reply(client->output_buffer, ch->args[1]);
+  add_simple_string_reply(client, ch->args[1]);
 }
 
 void handle_set(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 3) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'set' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'set' command");
     return;
   }
 
@@ -169,15 +169,15 @@ void handle_set(CommandHandler *ch) {
 
   switch (parse_result) {
   case ERR_SYNTAX:
-    add_error_reply(client->output_buffer, "ERR syntax error");
+    add_error_reply(client, "ERR syntax error");
     return;
   case ERR_VALUE:
-    add_error_reply(client->output_buffer, "ERR value is not an integer or out of range");
+    add_error_reply(client, "ERR value is not an integer or out of range");
     return;
   }
 
   if (options.expiration < 0) {
-    add_error_reply(client->output_buffer, "ERR expiration must be a non-negative integer");
+    add_error_reply(client, "ERR expiration must be a non-negative integer");
     return;
   }
 
@@ -195,7 +195,7 @@ void handle_set(CommandHandler *ch) {
   }
 
   if ((options.nx && key_exists) || (options.xx && !key_exists)) {
-    add_null_reply(client->output_buffer);
+    add_null_reply(client);
     return;
   }
 
@@ -214,38 +214,37 @@ void handle_set(CommandHandler *ch) {
 
   if (options.get) {
     if (old_value) {
-      add_bulk_string_reply(client->output_buffer, old_value);
+      add_bulk_string_reply(client, old_value);
       free(old_value);
     } else {
-      add_null_reply(client->output_buffer);
+      add_null_reply(client);
     }
   } else {
-    add_simple_string_reply(client->output_buffer, "OK");
+    add_simple_string_reply(client, "OK");
   }
 }
 
 void handle_get(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count != 2) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'get' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'get' command");
     return;
   }
 
   RedisValue *redis_value = redis_db_get(client->db, ch->args[1]);
   if (redis_value == NULL) {
-    add_null_reply(client->output_buffer);
+    add_null_reply(client);
   } else if (redis_value->type != TYPE_STRING) {
-    add_error_reply(client->output_buffer,
-                    "ERR Operation against a key holding the wrong kind of value");
+    add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
   } else {
-    add_bulk_string_reply(client->output_buffer, redis_value->data.str);
+    add_bulk_string_reply(client, redis_value->data.str);
   }
 }
 
 void handle_exist(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 2) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'exist' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'exist' command");
     return;
   }
 
@@ -256,26 +255,26 @@ void handle_exist(CommandHandler *ch) {
     }
   }
 
-  add_integer_reply(client->output_buffer, count);
+  add_integer_reply(client, count);
 }
 
 void handle_delete(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 2) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'delete' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'delete' command");
     return;
   }
 
   for (int i = 1; i < ch->arg_count; i++) {
     redis_db_delete(client->db, ch->args[i]);
   }
-  add_simple_string_reply(client->output_buffer, "OK");
+  add_simple_string_reply(client, "OK");
 }
 
 void handle_incr_decr(CommandHandler *ch, int increment) {
   Client *client = ch->client;
   if (ch->arg_count < 2) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'incr/decr' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'incr/decr' command");
     return;
   }
 
@@ -286,7 +285,7 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
   if (redis_value != NULL) {
     int parse_result = parse_integer(redis_value->data.str, &current_value);
     if (parse_result == ERR_VALUE) {
-      add_error_reply(client->output_buffer, "ERR value is not an integer");
+      add_error_reply(client, "ERR value is not an integer");
       return;
     }
   } else {
@@ -301,7 +300,7 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
 
   // set the new value in the database
   redis_db_set(client->db, ch->args[1], new_value_str, TYPE_STRING, 0);
-  add_integer_reply(client->output_buffer, new_value);
+  add_integer_reply(client, new_value);
 }
 
 void handle_incr(CommandHandler *ch) { handle_incr_decr(ch, 1); }
@@ -311,7 +310,7 @@ void handle_decr(CommandHandler *ch) { handle_incr_decr(ch, -1); }
 void handle_lpush(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 3) { // at least 2 arguments: key and one element
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'lpush' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'lpush' command");
     return;
   }
   const char *key = ch->args[1];
@@ -319,18 +318,17 @@ void handle_lpush(CommandHandler *ch) {
   for (int i = 2; i < ch->arg_count; i++) {
     int result = redis_db_lpush(client->db, key, ch->args[i], &length); // capture the result
     if (result == ERR_TYPE_MISMATCH) { // check for type mismatch error
-      add_error_reply(client->output_buffer,
-                      "ERR Operation against a key holding the wrong kind of value");
+      add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
       return;
     }
   }
-  add_integer_reply(client->output_buffer, length);
+  add_integer_reply(client, length);
 }
 
 void handle_rpush(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 3) { // at least 2 arguments: key and one element
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'rpush' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'rpush' command");
     return;
   }
   const char *key = ch->args[1];
@@ -338,18 +336,17 @@ void handle_rpush(CommandHandler *ch) {
   for (int i = 2; i < ch->arg_count; i++) {
     int result = redis_db_rpush(client->db, key, ch->args[i], &length); //
     if (result == ERR_TYPE_MISMATCH) { // check for type mismatch error
-      add_error_reply(client->output_buffer,
-                      "ERR Operation against a key holding the wrong kind of value");
+      add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
       return;
     }
   }
-  add_integer_reply(client->output_buffer, length);
+  add_integer_reply(client, length);
 }
 
 void handle_lrange(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 4) { // needs 3 arguments: LRANGE key start end
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'rpush' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'rpush' command");
     return;
   }
 
@@ -363,20 +360,18 @@ void handle_lrange(CommandHandler *ch) {
 
   int error = redis_db_lrange(client->db, list_key, start, end, &range, &range_length);
   if (error == ERR_TYPE_MISMATCH) { // check for type mismatch error
-    add_error_reply(client->output_buffer,
-                    "ERR Operation against a key holding the wrong kind of value");
+    add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
     return;
   }
 
-  add_array_reply(client->output_buffer, range, range_length);
+  add_array_reply(client, range, range_length);
   cleanup_lrange_result(range, range_length);
 }
 
 void handle_config(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 3) {
-    add_error_reply(client->output_buffer,
-                    "ERR wrong number of arguments for 'config get' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'config get' command");
     return;
   }
 
@@ -394,23 +389,23 @@ void handle_config(CommandHandler *ch) {
         response[response_index++] = "dbfilename";
         response[response_index++] = g_server_config.dbfilename;
       } else {
-        add_error_reply(client->output_buffer, "ERR Unknown config parameter");
+        add_error_reply(client, "ERR Unknown config parameter");
         return;
       }
     }
-    add_array_reply(client->output_buffer, response, response_index);
+    add_array_reply(client, response, response_index);
   }
 }
 
 void handle_save(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count != 1) {
-    add_error_reply(client->output_buffer, "ERR wrong number of arguments for 'save' command");
+    add_error_reply(client, "ERR wrong number of arguments for 'save' command");
   }
 
   redis_db_save(client->db);
 
-  add_simple_string_reply(client->output_buffer, "OK");
+  add_simple_string_reply(client, "OK");
 }
 
 // gets the key count for the currently selected db
@@ -420,7 +415,7 @@ void handle_dbsize(CommandHandler *ch) {
 
   int size = (int)dbsize;
 
-  add_integer_reply(client->output_buffer, size);
+  add_integer_reply(client, size);
 }
 
 void handle_info(CommandHandler *ch) {
@@ -442,12 +437,10 @@ void handle_info(CommandHandler *ch) {
   current_offset +=
       snprintf(info_output_buffer + current_offset, sizeof(info_output_buffer) - current_offset,
                "master_repl_offset:%lld\r\n", g_server_info.master_repl_offset);
-  add_bulk_string_reply(client->output_buffer, info_output_buffer);
+  add_bulk_string_reply(client, info_output_buffer);
 }
 
-void handle_replconf(CommandHandler *ch) {
-  add_simple_string_reply(ch->client->output_buffer, "OK");
-}
+void handle_replconf(CommandHandler *ch) { add_simple_string_reply(ch->client, "OK"); }
 
 void handle_simple_string_reply(CommandHandler *ch) {
   Client *client = ch->client;
@@ -494,8 +487,7 @@ void handle_simple_string_reply(CommandHandler *ch) {
 
 void handle_psync(CommandHandler *ch) {
   Client *client = ch->client;
-  add_psync_reply(client->output_buffer, g_server_info.master_replid,
-                  g_server_info.master_repl_offset);
+  add_psync_reply(client, g_server_info.master_replid, g_server_info.master_repl_offset);
   client->type = CLIENT_TYPE_REPLICA;
   // send $<length_of_file>\r\n<file_content>
   // call save
@@ -524,7 +516,7 @@ void handle_psync(CommandHandler *ch) {
 
 void send_ping_command(Client *client) {
   char *ping_cmd[] = {"PING"};
-  add_array_reply(client->output_buffer, ping_cmd, 1);
+  add_array_reply(client, ping_cmd, 1);
   flush_client_output(client);
   client->repl_client_state = REPL_STATE_SENT_PING;
   printf("sent ping command\n");
@@ -532,7 +524,7 @@ void send_ping_command(Client *client) {
 
 void send_replconf_listening_port_command(Client *client, char *replica_port) {
   char *args[3] = {"REPLCONF", "listening-port", replica_port};
-  add_array_reply(client->output_buffer, args, 3);
+  add_array_reply(client, args, 3);
   flush_client_output(client);
   client->repl_client_state = REPL_STATE_SENT_REPLCONF_PORT;
   printf("sent repl conf listening port\n");
@@ -541,7 +533,7 @@ void send_replconf_listening_port_command(Client *client, char *replica_port) {
 void send_replconf_capa_command(Client *client) {
   // safely hardcode capabilites for now
   char *args[3] = {"REPLCONF", "capa", "psync2"};
-  add_array_reply(client->output_buffer, args, 3);
+  add_array_reply(client, args, 3);
   flush_client_output(client);
   client->repl_client_state = REPL_STATE_SENT_REPLCONF_CAPA;
   printf("sent replconf capa command with args: capa psync2\n");
@@ -550,7 +542,7 @@ void send_replconf_capa_command(Client *client) {
 void send_psync_command(Client *client) {
   // initially hardcode PSYNC ? -1, for testing handshake
   char *args[3] = {"PSYNC", "?", "-1"};
-  add_array_reply(client->output_buffer, args, 3);
+  add_array_reply(client, args, 3);
   flush_client_output(client);
   client->repl_client_state = REPL_STATE_SENT_PSYNC;
   printf("sent psync command with args: ? -1\n");

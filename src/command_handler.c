@@ -7,6 +7,8 @@
 #include "command_handler.h"
 #include "commands.h"
 
+Handler *g_handler = NULL;
+
 void add_error_reply(ring_buffer, const char *str);
 
 CommandType get_command_type(char *command) {
@@ -41,12 +43,8 @@ CommandType get_command_type(char *command) {
   else if (strcmp(command, "INFO") == 0)
     return CMD_INFO;
   else if (strcmp(command, "REPLCONF") == 0) {
-    printf("RECEIVED REPLCONF\n");
-    fflush(stdout);
     return CMD_REPLCONF;
   } else if (strcmp(command, "PSYNC") == 0) {
-    printf("RECEIVED PSYNC\n");
-    fflush(stdout);
     return CMD_PSYNC;
   } else
     return CMD_UNKNOWN;
@@ -111,6 +109,11 @@ void handle_command(CommandHandler *ch) {
   default:
     add_error_reply(ch->client->output_buffer, "ERR unknown command");
     break;
+  }
+  // if it is a write command, propogate it to replicas
+  // for now propogate set
+  if (command_type == CMD_SET) {
+    ch->client->should_propogate_command = true;
   }
 }
 
@@ -262,6 +265,9 @@ Handler *create_handler() {
   handler->end_error = unimplemented;
   handler->begin_integer = unimplemented;
   handler->end_integer = unimplemented;
+
+  // assign newly created instance to global handler
+  g_handler = handler;
 
   return handler;
 }

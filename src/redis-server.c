@@ -1,4 +1,15 @@
+#include "redis-server.h"
 #include "arpa/inet.h"
+#include "client.h"
+#include "command_handler.h"
+#include "commands.h"
+#include "database.h"
+#include "rdb.h"
+#include "replication.h"
+#include "resp.h"
+#include "ring_buffer.h"
+#include "server_config.h"
+#include "util.h"
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -12,17 +23,6 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "client.h"
-#include "command_handler.h"
-#include "commands.h"
-#include "database.h"
-#include "rdb.h"
-#include "redis-server.h"
-#include "replication.h"
-#include "resp.h"
-#include "server_config.h"
-#include "util.h"
-
 #define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
 #define MAX_PATH_LENGTH 256
@@ -34,10 +34,8 @@ server_info_t g_server_info = {.role = "master",
                                    "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", // hard code for now
                                .master_repl_offset = 0};
 
-Handler *handler;
 int g_epoll_fd; // epollfd global
 int port = DEFAULT_PORT;
-
 volatile sig_atomic_t stop_server = 0;
 
 void sigint_handler(int sig) { stop_server = 1; }
