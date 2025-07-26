@@ -1,4 +1,5 @@
 #include "rdb.h"
+#include "client.h"
 #include "commands.h"
 #include "database.h"
 #include "redis-server.h"
@@ -400,12 +401,11 @@ void master_send_rdb_snapshot(Client *client) {
   if (client->rdb_file_offset == client->rdb_file_size) {
     printf("RDB file transmission complete for client %d\n", client->fd);
     client_disable_write_events(client);
-    client->type = REPL_STATE_READY;
+    client->master_repl_state = MASTER_REPL_STATE_PROPOGATE;
   }
 }
 
 void replica_receive_rdb_snapshot(Client *client) {
-  fflush(stdout);
   ssize_t bytes_read;
 
   // open a temporary file for writing
@@ -509,6 +509,7 @@ void replica_receive_rdb_snapshot(Client *client) {
       rdb_load_data_from_file(client->db, g_server_config.dir, "temp_snapshot.rdb");
 
       client->repl_client_state = REPL_STATE_READY;
+      client_enable_read_events(client); // start monitoring for EPOLLIN from master
       return;
     }
   }

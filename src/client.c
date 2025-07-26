@@ -1,6 +1,8 @@
 #include "client.h"
 #include "database.h"
 #include "redis-server.h"
+#include "replication.h"
+#include "server_config.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -22,6 +24,8 @@ Client *create_client(int fd) {
   client->rdb_file_size = 0;
   client->rdb_file_offset = 0;
   client->tmp_rdb_fp = NULL;
+  client->should_propogate_command = false;
+  client->epoll_events = 0;
 
   // create a ring buffer of 64KB (adjust size as needed)
   if (rb_create(RING_BUFFER_SIZE, &client->input_buffer) != 0 ||
@@ -111,7 +115,6 @@ void process_client_input(Client *client) {
 
     // read from the socket into the writable portion of the ring buffer
     ssize_t bytes_received = read(client->fd, write_buf, writable_len);
-
     switch (bytes_received) {
     case -1:
       if (errno == EINTR) {
@@ -149,6 +152,67 @@ void process_client_input(Client *client) {
 
     size_t bytes_parsed = parser_parse(client->parser, begin, end) - begin;
 
+    if (client->should_propogate_command) {
+      g_server_info.master_repl_offset += bytes_parsed;
+      printf("propogating command\n");
+      fflush(stdout);
+
+      // // copy the bytes parsed into the repl_backlog buffer
+      // char *repl_backlog_write_ptr;
+      // size_t repl_backlog_writable_len;
+
+      // if (rb_writable(g_repl_backlog, &repl_backlog_write_ptr, &repl_backlog_writable_len) != 0)
+      // {
+      //   perror("failed to get writable buffer");
+      //   exit(EXIT_FAILURE);
+      // }
+
+      // if (repl_backlog_writable_len < bytes_parsed) {
+      //   fprintf(stderr,
+      //           "Warning: Replication backlog buffer full. Cannot propagate command (size %zu, "
+      //           "available %zu).\n",
+      //           bytes_parsed, repl_backlog_writable_len);
+      // } else {
+      //   memcpy(repl_backlog_write_ptr, client->input_buffer, bytes_parsed);
+      //   if (rb_write(g_repl_backlog, bytes_parsed) != 0) {
+      //     perror("failed to update write index for replication backlog");
+      //     exit(EXIT_FAILURE);
+      //   }
+
+      // for each replica, copy to the replica's output buffer
+      // and enable epoll to monitor for EPOLLOUT
+      // for (int i = 0; i < MAX_REPLICAS; i++) {
+      Client *replica_client = g_replica;
+      if (replica_client != NULL) {
+        char *replica_output_write_buf;
+        size_t replica_output_writable_len;
+
+        if (rb_writable(replica_client->output_buffer, &replica_output_write_buf,
+                        &replica_output_writable_len) != 0) {
+          fprintf(stderr, "failed to get writable buffer for replica %d's output buffer.\n",
+                  replica_client->fd);
+          // consider disconnecting this replica
+        }
+
+        // only copy it if we can fit it
+        if (bytes_parsed <= replica_output_writable_len) {
+          memcpy(replica_output_write_buf, begin, bytes_parsed);
+          printf("copied command\n");
+        }
+
+        if (rb_write(replica_client->output_buffer, bytes_parsed) != 0) {
+          fprintf(stderr, "Error: Failed to update write index for replica %d's output buffer.\n",
+                  replica_client->fd);
+
+          // continue;
+        }
+
+        // flush_client_output(replica_client);
+        client_enable_write_events(replica_client);
+      }
+      // }
+    }
+
     if (rb_read(client->input_buffer, bytes_parsed)) {
       fprintf(stderr, "failed to update read index\n");
       return;
@@ -164,6 +228,22 @@ void process_client_input(Client *client) {
 void handle_client_disconnection(Client *client) {
   epoll_ctl(g_epoll_fd, EPOLL_CTL_DEL, client->fd, NULL);
   destroy_client(client);
+}
+
+void client_enable_read_events(Client *client) {
+  if (!client) {
+    perror("client_enable_read_events: client pointer is null\n");
+    return;
+  }
+  struct epoll_event event;
+  event.events = client->epoll_events | EPOLLIN;
+  event.data.fd = client->fd;
+  event.data.ptr = client;
+  if (epoll_ctl(g_epoll_fd, EPOLL_CTL_MOD, client->fd, &event) == -1) {
+    perror("epoll_ctl mod failed");
+    exit(EXIT_FAILURE);
+  }
+  client->epoll_events = event.events;
 }
 
 void client_enable_write_events(Client *client) {

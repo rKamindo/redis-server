@@ -3,9 +3,10 @@
 
 #include "client.h"
 #include "database.h"
-#include "server_config.h"
 
 void master_handle_replica_out(Client *client);
 void replica_handle_master_data(Client *master_client);
 
+void set_replica(Client *client);
+extern Client *g_replica;
 #endif // REPLICATION.H

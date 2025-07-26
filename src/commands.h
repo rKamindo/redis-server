@@ -40,4 +40,8 @@ void send_replconf_listening_port_command(Client *client, char *replica_port);
 void send_replconf_capa_command(Client *client);
 void send_psync_command(Client *client);
 
+void propogate_command(CommandHandler *ch);
+
+void add_error_reply(Client *client, const char *str);
+
 #endif // COMMAND_H

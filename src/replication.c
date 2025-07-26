@@ -1,11 +1,17 @@
 #include "replication.h"
 #include "commands.h"
 #include "rdb.h"
+#include "server_config.h"
 #include <stdio.h>
+
+Client *g_replica = NULL;
 
 void master_handle_replica_out(Client *client) {
   MasterReplicaState master_repl_state = client->master_repl_state;
   switch (master_repl_state) {
+  case MASTER_REPL_STATE_PROPOGATE:
+    flush_client_output(client);
+    break;
   case MASTER_REPL_STATE_SENDING_RDB_DATA:
     master_send_rdb_snapshot(client);
     break;
@@ -17,6 +23,13 @@ void replica_handle_master_data(Client *master_client) {
   case REPL_STATE_CONNECTING:
     send_ping_command(master_client);
     master_client->repl_client_state = REPL_STATE_SENT_PING;
+    break;
+  case REPL_STATE_SENT_PING:
+  case REPL_STATE_SENT_REPLCONF_PORT:
+  case REPL_STATE_SENT_REPLCONF_CAPA:
+  case REPL_STATE_SENT_PSYNC:
+    // we are expecting replys from master
+    process_client_input(master_client);
     break;
   case REPL_STATE_RECEIVED_PONG:
     send_replconf_listening_port_command(master_client, g_server_config.port);
@@ -95,7 +108,14 @@ void replica_handle_master_data(Client *master_client) {
     replica_receive_rdb_snapshot(master_client);
     break;
   case REPL_STATE_READY:
+    process_client_input(master_client);
     break;
   default:
   }
+}
+
+void set_replica(Client *client) {
+  client->type = CLIENT_TYPE_REPLICA;
+  fprintf(stderr, "Single replica client set: fd %d\n", client->fd);
+  g_replica = client;
 }

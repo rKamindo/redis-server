@@ -126,13 +126,13 @@ int start_server(int argc, char *argv[]) {
     set_non_blocking(master_fd);
     master_client->db = db;
     master_client->type = CLIENT_TYPE_MASTER;
+    master_client->should_respond = false;
     master_client->repl_client_state = REPL_STATE_CONNECTING;
 
     CommandHandler *command_handler = create_command_handler(master_client, 256, 10);
     parser_init(master_client->parser, command_handler);
 
     struct epoll_event event;
-    event.events = EPOLLIN | EPOLLOUT;
     event.data.fd = master_fd;
     event.data.ptr = master_client;
 
@@ -140,6 +140,8 @@ int start_server(int argc, char *argv[]) {
       perror("epoll_ctl for master_fd failed");
       exit(EXIT_FAILURE);
     }
+
+    client_enable_write_events(master_client);
   }
 
   // register the signal handler
@@ -232,8 +234,6 @@ int start_server(int argc, char *argv[]) {
         int optval = 1;
         setsockopt(ConnectFD, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
-        event.events = EPOLLIN;
-        new_client->epoll_events = event.events;
         event.data.fd = ConnectFD;
         event.data.ptr = new_client;
 
@@ -241,13 +241,23 @@ int start_server(int argc, char *argv[]) {
           perror("epoll_ctl failed");
           exit(EXIT_FAILURE);
         }
-      } else if (events[i].events & EPOLLIN) {
-        process_client_input(client);
-      } else if (events[i].events & EPOLLOUT) {
-        if (client->type == CLIENT_TYPE_REPLICA) {
-          master_handle_replica_out(client);
-        } else if (client->type == CLIENT_TYPE_MASTER) {
-          replica_handle_master_data(client);
+        client_enable_read_events(new_client);
+      } else if (events[i].events & EPOLLIN | EPOLLOUT) {
+        if (events[i].events & EPOLLIN) {
+          if (client->type == CLIENT_TYPE_REGULAR) {
+            process_client_input(client);
+          } else if (client->type == CLIENT_TYPE_MASTER) {
+            replica_handle_master_data(client);
+          }
+        }
+        if (events[i].events & EPOLLOUT) {
+          if (client->type == CLIENT_TYPE_REPLICA) {
+            master_handle_replica_out(client);
+          } else if (client->type == CLIENT_TYPE_MASTER) {
+            replica_handle_master_data(client);
+          } else if (client->type == CLIENT_TYPE_REGULAR) {
+            flush_client_output(client);
+          }
         }
       } else if (events[i].events & EPOLLHUP | EPOLLERR) {
         handle_client_disconnection(client);

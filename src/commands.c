@@ -4,6 +4,7 @@
 #include "database.h"
 #include "linked_list.h"
 #include "redis-server.h"
+#include "replication.h"
 #include "server_config.h"
 #include "sys/time.h"
 #include "util.h"
@@ -487,8 +488,8 @@ void handle_simple_string_reply(CommandHandler *ch) {
 
 void handle_psync(CommandHandler *ch) {
   Client *client = ch->client;
+  set_replica(client);
   add_psync_reply(client, g_server_info.master_replid, g_server_info.master_repl_offset);
-  client->type = CLIENT_TYPE_REPLICA;
   // send $<length_of_file>\r\n<file_content>
   // call save
   redis_db_save(client->db);

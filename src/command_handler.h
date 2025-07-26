@@ -41,6 +41,7 @@ typedef struct CommandHandler {
   size_t ends_size;
   size_t ends_capacity;
   struct Client *client;
+  bool should_respond;
 } CommandHandler;
 
 CommandHandler *create_command_handler(struct Client *client, size_t initial_buf_size,

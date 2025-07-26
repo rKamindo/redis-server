@@ -26,7 +26,7 @@ typedef enum {
   REPL_STATE_ERROR
 } ReplicaClientState;
 
-typedef enum { MASTER_REPL_STATE_SENDING_RDB_DATA } MasterReplicaState;
+typedef enum { MASTER_REPL_STATE_SENDING_RDB_DATA, MASTER_REPL_STATE_PROPOGATE } MasterReplicaState;
 
 typedef struct Client {
   int fd;
@@ -50,6 +50,9 @@ typedef struct Client {
   long long rdb_received_bytes;
   long long rdb_written_bytes;
   FILE *tmp_rdb_fp; // temporary file for writing rdb from master
+
+  bool should_propogate_command;
+  bool should_respond;
 } Client;
 
 Client *create_client(int fd);
@@ -58,5 +61,6 @@ void flush_client_output(Client *client);
 void destroy_client(Client *client);
 void process_client_input(Client *client);
 void handle_client_disconnection(Client *client);
+void client_enable_read_events(Client *client);
 
 #endif // CLIENT_H
