@@ -41,7 +41,7 @@ volatile sig_atomic_t stop_server = 0;
 void sigint_handler(int sig) { stop_server = 1; }
 
 int start_server(int argc, char *argv[]) {
-  handler = create_handler();
+  g_handler = create_handler();
   redis_db_t *db = redis_db_create();
   g_epoll_fd = epoll_create(1);
   if (g_epoll_fd == -1) {
@@ -270,7 +270,7 @@ int start_server(int argc, char *argv[]) {
     printf("# DB saved on disk\n");
   }
   redis_db_destroy(db);
-  destroy_handler(handler);
+  destroy_handler(g_handler);
   printf("# redis_lite is now ready to exit, bye bye...\n");
   return EXIT_SUCCESS;
 }
