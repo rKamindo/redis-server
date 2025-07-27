@@ -116,6 +116,6 @@ void replica_handle_master_data(Client *master_client) {
 
 void set_replica(Client *client) {
   client->type = CLIENT_TYPE_REPLICA;
-  fprintf(stderr, "Single replica client set: fd %d\n", client->fd);
+  client->should_reply = false;
   g_replica = client;
 }

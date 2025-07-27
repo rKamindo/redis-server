@@ -170,15 +170,17 @@ void handle_set(CommandHandler *ch) {
 
   switch (parse_result) {
   case ERR_SYNTAX:
-    add_error_reply(client, "ERR syntax error");
+    if (client->should_reply) add_error_reply(client, "ERR syntax error");
     return;
   case ERR_VALUE:
-    add_error_reply(client, "ERR value is not an integer or out of range");
+    if (client->should_reply)
+      add_error_reply(client, "ERR value is not an integer or out of range");
     return;
   }
 
   if (options.expiration < 0) {
-    add_error_reply(client, "ERR expiration must be a non-negative integer");
+    if (client->should_reply)
+      add_error_reply(client, "ERR expiration must be a non-negative integer");
     return;
   }
 
@@ -196,7 +198,7 @@ void handle_set(CommandHandler *ch) {
   }
 
   if ((options.nx && key_exists) || (options.xx && !key_exists)) {
-    add_null_reply(client);
+    if (client->should_reply) add_null_reply(client);
     return;
   }
 
@@ -215,30 +217,32 @@ void handle_set(CommandHandler *ch) {
 
   if (options.get) {
     if (old_value) {
-      add_bulk_string_reply(client, old_value);
+      if (client->should_reply) add_bulk_string_reply(client, old_value);
       free(old_value);
     } else {
-      add_null_reply(client);
+      if (client->should_reply) add_null_reply(client);
     }
   } else {
-    add_simple_string_reply(client, "OK");
+    if (client->should_reply) add_simple_string_reply(client, "OK");
   }
 }
 
 void handle_get(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count != 2) {
-    add_error_reply(client, "ERR wrong number of arguments for 'get' command");
+    if (client->should_reply)
+      add_error_reply(client, "ERR wrong number of arguments for 'get' command");
     return;
   }
 
   RedisValue *redis_value = redis_db_get(client->db, ch->args[1]);
   if (redis_value == NULL) {
-    add_null_reply(client);
+    if (client->should_reply) add_null_reply(client);
   } else if (redis_value->type != TYPE_STRING) {
-    add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
+    if (client->should_reply)
+      add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
   } else {
-    add_bulk_string_reply(client, redis_value->data.str);
+    if (client->should_reply) add_bulk_string_reply(client, redis_value->data.str);
   }
 }
 
@@ -269,13 +273,14 @@ void handle_delete(CommandHandler *ch) {
   for (int i = 1; i < ch->arg_count; i++) {
     redis_db_delete(client->db, ch->args[i]);
   }
-  add_simple_string_reply(client, "OK");
+  if (client->should_reply) add_simple_string_reply(client, "OK");
 }
 
 void handle_incr_decr(CommandHandler *ch, int increment) {
   Client *client = ch->client;
   if (ch->arg_count < 2) {
-    add_error_reply(client, "ERR wrong number of arguments for 'incr/decr' command");
+    if (client->should_reply)
+      add_error_reply(client, "ERR wrong number of arguments for 'incr/decr' command");
     return;
   }
 
@@ -286,7 +291,7 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
   if (redis_value != NULL) {
     int parse_result = parse_integer(redis_value->data.str, &current_value);
     if (parse_result == ERR_VALUE) {
-      add_error_reply(client, "ERR value is not an integer");
+      if (client->should_reply) add_error_reply(client, "ERR value is not an integer");
       return;
     }
   } else {
@@ -301,7 +306,7 @@ void handle_incr_decr(CommandHandler *ch, int increment) {
 
   // set the new value in the database
   redis_db_set(client->db, ch->args[1], new_value_str, TYPE_STRING, 0);
-  add_integer_reply(client, new_value);
+  if (client->should_reply) add_integer_reply(client, new_value);
 }
 
 void handle_incr(CommandHandler *ch) { handle_incr_decr(ch, 1); }
@@ -311,7 +316,8 @@ void handle_decr(CommandHandler *ch) { handle_incr_decr(ch, -1); }
 void handle_lpush(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 3) { // at least 2 arguments: key and one element
-    add_error_reply(client, "ERR wrong number of arguments for 'lpush' command");
+    if (client->should_reply)
+      add_error_reply(client, "ERR wrong number of arguments for 'lpush' command");
     return;
   }
   const char *key = ch->args[1];
@@ -319,17 +325,19 @@ void handle_lpush(CommandHandler *ch) {
   for (int i = 2; i < ch->arg_count; i++) {
     int result = redis_db_lpush(client->db, key, ch->args[i], &length); // capture the result
     if (result == ERR_TYPE_MISMATCH) { // check for type mismatch error
-      add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
+      if (client->should_reply)
+        add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
       return;
     }
   }
-  add_integer_reply(client, length);
+  if (client->should_reply) add_integer_reply(client, length);
 }
 
 void handle_rpush(CommandHandler *ch) {
   Client *client = ch->client;
   if (ch->arg_count < 3) { // at least 2 arguments: key and one element
-    add_error_reply(client, "ERR wrong number of arguments for 'rpush' command");
+    if (client->should_reply)
+      add_error_reply(client, "ERR wrong number of arguments for 'rpush' command");
     return;
   }
   const char *key = ch->args[1];
@@ -337,11 +345,12 @@ void handle_rpush(CommandHandler *ch) {
   for (int i = 2; i < ch->arg_count; i++) {
     int result = redis_db_rpush(client->db, key, ch->args[i], &length); //
     if (result == ERR_TYPE_MISMATCH) { // check for type mismatch error
-      add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
+      if (client->should_reply)
+        add_error_reply(client, "ERR Operation against a key holding the wrong kind of value");
       return;
     }
   }
-  add_integer_reply(client, length);
+  if (client->should_reply) add_integer_reply(client, length);
 }
 
 void handle_lrange(CommandHandler *ch) {

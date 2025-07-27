@@ -25,6 +25,7 @@ Client *create_client(int fd) {
   client->rdb_file_offset = 0;
   client->tmp_rdb_fp = NULL;
   client->should_propogate_command = false;
+  client->should_reply = true;
   client->epoll_events = 0;
 
   // create a ring buffer of 64KB (adjust size as needed)
@@ -154,8 +155,6 @@ void process_client_input(Client *client) {
 
     if (client->should_propogate_command) {
       g_server_info.master_repl_offset += bytes_parsed;
-      printf("propogating command\n");
-      fflush(stdout);
 
       // // copy the bytes parsed into the repl_backlog buffer
       // char *repl_backlog_write_ptr;
