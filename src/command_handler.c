@@ -51,7 +51,6 @@ CommandType get_command_type(char *command) {
 
 void handle_command(CommandHandler *ch) {
   ch->client->should_propogate_command = false;
-  printf("received a command!");
 
   CommandType command_type = get_command_type(ch->args[0]);
 
@@ -111,9 +110,9 @@ void handle_command(CommandHandler *ch) {
     add_error_reply(ch->client, "ERR unknown command");
     break;
   }
-  // if it is a write command, propogate it to replicas
+  // if it is a write command
   // for now propogate set
-  if (command_type == CMD_SET && g_replica != NULL) {
+  if (command_type == CMD_SET) {
     ch->client->should_propogate_command = true;
   }
 }

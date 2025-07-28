@@ -180,36 +180,34 @@ void process_client_input(Client *client) {
 
       // for each replica, copy to the replica's output buffer
       // and enable epoll to monitor for EPOLLOUT
-      // for (int i = 0; i < MAX_REPLICAS; i++) {
-      Client *replica_client = g_replica;
-      if (replica_client != NULL) {
-        char *replica_output_write_buf;
-        size_t replica_output_writable_len;
+      for (int i = 0; i < g_server_info.num_replicas; i++) {
+        Client *replica_client = g_server_info.replicas[i];
+        if (replica_client != NULL) {
+          char *replica_output_write_buf;
+          size_t replica_output_writable_len;
 
-        if (rb_writable(replica_client->output_buffer, &replica_output_write_buf,
-                        &replica_output_writable_len) != 0) {
-          fprintf(stderr, "failed to get writable buffer for replica %d's output buffer.\n",
-                  replica_client->fd);
-          // consider disconnecting this replica
+          if (rb_writable(replica_client->output_buffer, &replica_output_write_buf,
+                          &replica_output_writable_len) != 0) {
+            fprintf(stderr, "failed to get writable buffer for replica %d's output buffer.\n",
+                    replica_client->fd);
+            // consider disconnecting this replica
+          }
+
+          // only copy it if we can fit it
+          if (bytes_parsed <= replica_output_writable_len) {
+            memcpy(replica_output_write_buf, begin, bytes_parsed);
+          }
+
+          if (rb_write(replica_client->output_buffer, bytes_parsed) != 0) {
+            fprintf(stderr, "failed to update write index for replica %d's output buffer.\n",
+                    replica_client->fd);
+
+            continue;
+          }
+
+          client_enable_write_events(replica_client);
         }
-
-        // only copy it if we can fit it
-        if (bytes_parsed <= replica_output_writable_len) {
-          memcpy(replica_output_write_buf, begin, bytes_parsed);
-          printf("copied command\n");
-        }
-
-        if (rb_write(replica_client->output_buffer, bytes_parsed) != 0) {
-          fprintf(stderr, "Error: Failed to update write index for replica %d's output buffer.\n",
-                  replica_client->fd);
-
-          // continue;
-        }
-
-        // flush_client_output(replica_client);
-        client_enable_write_events(replica_client);
       }
-      // }
     }
 
     if (rb_read(client->input_buffer, bytes_parsed)) {
@@ -226,12 +224,16 @@ void process_client_input(Client *client) {
 
 void handle_client_disconnection(Client *client) {
   epoll_ctl(g_epoll_fd, EPOLL_CTL_DEL, client->fd, NULL);
+  if (client->type == CLIENT_TYPE_REPLICA) {
+    printf("handling replica disconnection");
+    remove_replica(client);
+  }
   destroy_client(client);
 }
 
 void client_enable_read_events(Client *client) {
   if (!client) {
-    perror("client_enable_read_events: client pointer is null\n");
+    fprintf(stderr, "client_enable_read_events: client pointer is null\n");
     return;
   }
   struct epoll_event event;
@@ -247,7 +249,7 @@ void client_enable_read_events(Client *client) {
 
 void client_enable_write_events(Client *client) {
   if (!client) {
-    perror("client_enable_write_events: client pointer is null\n");
+    fprintf(stderr, "client_enable_write_events: client pointer is null\n");
     return;
   }
   struct epoll_event event;
@@ -263,7 +265,7 @@ void client_enable_write_events(Client *client) {
 
 void client_disable_write_events(Client *client) {
   if (!client) {
-    perror("client_disable_write_events: client pointer is null\n");
+    fprintf(stderr, "client_disable_write_events: client pointer is null\n");
     return;
   }
   struct epoll_event event;

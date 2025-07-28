@@ -126,7 +126,6 @@ int start_server(int argc, char *argv[]) {
     set_non_blocking(master_fd);
     master_client->db = db;
     master_client->type = CLIENT_TYPE_MASTER;
-    master_client->should_respond = false;
     master_client->repl_client_state = REPL_STATE_CONNECTING;
 
     CommandHandler *command_handler = create_command_handler(master_client, 256, 10);

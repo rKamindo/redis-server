@@ -4,8 +4,6 @@
 #include "server_config.h"
 #include <stdio.h>
 
-Client *g_replica = NULL;
-
 void master_handle_replica_out(Client *client) {
   MasterReplicaState master_repl_state = client->master_repl_state;
   switch (master_repl_state) {
@@ -114,8 +112,42 @@ void replica_handle_master_data(Client *master_client) {
   }
 }
 
-void set_replica(Client *client) {
+/*
+Add a replica to the array of replicas. Write commands will be propogated to replicas.
+*/
+void add_replica(Client *client) {
+  if (!client) {
+    fprintf(stderr, "add_replica: client is null");
+  }
   client->type = CLIENT_TYPE_REPLICA;
   client->should_reply = false;
-  g_replica = client;
+  g_server_info.replicas[g_server_info.num_replicas++] = client;
+}
+
+/*
+Remove a replica from the array of replicas.
+Swaps the replica to be re
+*/
+void remove_replica(Client *client) {
+  if (!client) {
+    fprintf(stderr, "remove_replica: client is null");
+  }
+
+  int num_replicas = g_server_info.num_replicas;
+  Client *replica = NULL;
+  int replica_pos = -1;
+  for (int i = 0; i < num_replicas; i++) {
+    if (g_server_info.replicas[i] == client) {
+      replica_pos = i;
+      break;
+    }
+  }
+
+  if (replica_pos == -1) {
+    fprintf(stderr, "remove_replica: replica not found in replicas");
+  }
+
+  // swap replica pos with last replica then delete
+  g_server_info.replicas[replica_pos] = g_server_info.replicas[num_replicas - 1];
+  g_server_info.num_replicas;
 }

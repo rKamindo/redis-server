@@ -497,7 +497,7 @@ void handle_simple_string_reply(CommandHandler *ch) {
 
 void handle_psync(CommandHandler *ch) {
   Client *client = ch->client;
-  set_replica(client);
+  add_replica(client);
   add_psync_reply(client, g_server_info.master_replid, g_server_info.master_repl_offset);
   // send $<length_of_file>\r\n<file_content>
   // call save

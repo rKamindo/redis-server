@@ -7,6 +7,7 @@
 void master_handle_replica_out(Client *client);
 void replica_handle_master_data(Client *master_client);
 
-void set_replica(Client *client);
-extern Client *g_replica;
+void add_replica(Client *replica);
+void remove_replica(Client *replica);
+
 #endif // REPLICATION.H
