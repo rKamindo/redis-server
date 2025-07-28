@@ -450,7 +450,15 @@ void handle_info(CommandHandler *ch) {
   add_bulk_string_reply(client, info_output_buffer);
 }
 
-void handle_replconf(CommandHandler *ch) { add_simple_string_reply(ch->client, "OK"); }
+void handle_replconf(CommandHandler *ch) {
+  if (ch->arg_count >= 3 && strcmp(ch->args[1], "GETACK") == 0 && strcmp(ch->args[2], "*") == 0) {
+    char *reply[3] = {"REPLCONF", "ACK", "0"};
+    add_array_reply(ch->client, reply,
+                    3); // hard code for now
+    return;
+  }
+  add_simple_string_reply(ch->client, "OK");
+}
 
 void handle_simple_string_reply(CommandHandler *ch) {
   Client *client = ch->client;
