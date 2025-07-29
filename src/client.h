@@ -12,6 +12,7 @@ struct Parser;
 typedef enum { CLIENT_TYPE_REGULAR, CLIENT_TYPE_REPLICA, CLIENT_TYPE_MASTER } ClientType;
 
 typedef enum {
+  REPL_STATE_NONE,
   REPL_STATE_CONNECTING,
   REPL_STATE_SENT_PING,
   REPL_STATE_RECEIVED_PONG,
@@ -26,7 +27,7 @@ typedef enum {
   REPL_STATE_ERROR
 } ReplicaClientState;
 
-typedef enum { MASTER_REPL_STATE_SENDING_RDB_DATA } MasterReplicaState;
+typedef enum { MASTER_REPL_STATE_SENDING_RDB_DATA, MASTER_REPL_STATE_PROPOGATE } MasterReplicaState;
 
 typedef struct Client {
   int fd;
@@ -50,6 +51,11 @@ typedef struct Client {
   long long rdb_received_bytes;
   long long rdb_written_bytes;
   FILE *tmp_rdb_fp; // temporary file for writing rdb from master
+
+  // used to determine whether to propogate commands
+  bool should_propogate_command;
+  // used to determine whether this client should be replied to
+  bool should_reply;
 } Client;
 
 Client *create_client(int fd);
@@ -58,5 +64,6 @@ void flush_client_output(Client *client);
 void destroy_client(Client *client);
 void process_client_input(Client *client);
 void handle_client_disconnection(Client *client);
+void client_enable_read_events(Client *client);
 
 #endif // CLIENT_H

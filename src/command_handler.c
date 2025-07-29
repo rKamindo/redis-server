@@ -6,10 +6,9 @@
 
 #include "command_handler.h"
 #include "commands.h"
+#include "replication.h"
 
 Handler *g_handler = NULL;
-
-void add_error_reply(ring_buffer, const char *str);
 
 CommandType get_command_type(char *command) {
   if (strcmp(command, "PING") == 0)
@@ -51,6 +50,7 @@ CommandType get_command_type(char *command) {
 }
 
 void handle_command(CommandHandler *ch) {
+  ch->client->should_propogate_command = false;
 
   CommandType command_type = get_command_type(ch->args[0]);
 
@@ -107,10 +107,10 @@ void handle_command(CommandHandler *ch) {
     handle_psync(ch);
     break;
   default:
-    add_error_reply(ch->client->output_buffer, "ERR unknown command");
+    add_error_reply(ch->client, "ERR unknown command");
     break;
   }
-  // if it is a write command, propogate it to replicas
+  // if it is a write command
   // for now propogate set
   if (command_type == CMD_SET) {
     ch->client->should_propogate_command = true;

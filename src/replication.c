@@ -1,11 +1,15 @@
 #include "replication.h"
 #include "commands.h"
 #include "rdb.h"
+#include "server_config.h"
 #include <stdio.h>
 
 void master_handle_replica_out(Client *client) {
   MasterReplicaState master_repl_state = client->master_repl_state;
   switch (master_repl_state) {
+  case MASTER_REPL_STATE_PROPOGATE:
+    flush_client_output(client);
+    break;
   case MASTER_REPL_STATE_SENDING_RDB_DATA:
     master_send_rdb_snapshot(client);
     break;
@@ -17,6 +21,13 @@ void replica_handle_master_data(Client *master_client) {
   case REPL_STATE_CONNECTING:
     send_ping_command(master_client);
     master_client->repl_client_state = REPL_STATE_SENT_PING;
+    break;
+  case REPL_STATE_SENT_PING:
+  case REPL_STATE_SENT_REPLCONF_PORT:
+  case REPL_STATE_SENT_REPLCONF_CAPA:
+  case REPL_STATE_SENT_PSYNC:
+    // we are expecting replys from master
+    process_client_input(master_client);
     break;
   case REPL_STATE_RECEIVED_PONG:
     send_replconf_listening_port_command(master_client, g_server_config.port);
@@ -95,7 +106,47 @@ void replica_handle_master_data(Client *master_client) {
     replica_receive_rdb_snapshot(master_client);
     break;
   case REPL_STATE_READY:
+    process_client_input(master_client);
     break;
   default:
   }
+}
+
+/*
+Add a replica to the array of replicas. Write commands will be propogated to replicas.
+*/
+void add_replica(Client *client) {
+  if (!client) {
+    fprintf(stderr, "add_replica: client is null");
+  }
+  client->type = CLIENT_TYPE_REPLICA;
+  client->should_reply = false;
+  g_server_info.replicas[g_server_info.num_replicas++] = client;
+}
+
+/*
+Remove a replica from the array of replicas.
+Swaps the replica to be re
+*/
+void remove_replica(Client *client) {
+  if (!client) {
+    fprintf(stderr, "remove_replica: client is null");
+  }
+
+  int num_replicas = g_server_info.num_replicas;
+  Client *replica = NULL;
+  int replica_pos = -1;
+  for (int i = 0; i < num_replicas; i++) {
+    if (g_server_info.replicas[i] == client) {
+      replica_pos = i;
+      break;
+    }
+  }
+
+  if (replica_pos == -1) {
+    fprintf(stderr, "remove_replica: replica not found in replicas");
+  }
+
+  g_server_info.replicas[replica_pos] = g_server_info.replicas[num_replicas - 1];
+  g_server_info.num_replicas--;
 }

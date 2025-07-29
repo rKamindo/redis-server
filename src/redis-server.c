@@ -29,7 +29,7 @@
 
 server_config_t g_server_config = {.dir = "/tmp/redis-data", .dbfilename = "dump.rdb"};
 
-server_info_t g_server_info = {.role = "master",
+server_info_t g_server_info = {.role = ROLE_MASTER,
                                .master_replid =
                                    "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", // hard code for now
                                .master_repl_offset = 0};
@@ -41,7 +41,7 @@ volatile sig_atomic_t stop_server = 0;
 void sigint_handler(int sig) { stop_server = 1; }
 
 int start_server(int argc, char *argv[]) {
-  handler = create_handler();
+  g_handler = create_handler();
   redis_db_t *db = redis_db_create();
   g_epoll_fd = epoll_create(1);
   if (g_epoll_fd == -1) {
@@ -69,7 +69,7 @@ int start_server(int argc, char *argv[]) {
       }
     } else if (strcmp(argv[i], "--replicaof") == 0) {
       if (i + 2 < argc) {
-        strcpy(g_server_info.role, "slave");
+        g_server_info.role = ROLE_SLAVE;
         strcpy(g_server_config.master_host, argv[i + 1]);
         strcpy(g_server_config.master_port, argv[i + 2]);
         i += 2;
@@ -77,7 +77,7 @@ int start_server(int argc, char *argv[]) {
     }
   }
 
-  if (strcmp(g_server_info.role, "slave") == 0) {
+  if (g_server_info.role == ROLE_SLAVE) {
     int master_fd;
     char port_str[6];
 
@@ -132,7 +132,6 @@ int start_server(int argc, char *argv[]) {
     parser_init(master_client->parser, command_handler);
 
     struct epoll_event event;
-    event.events = EPOLLIN | EPOLLOUT;
     event.data.fd = master_fd;
     event.data.ptr = master_client;
 
@@ -140,12 +139,13 @@ int start_server(int argc, char *argv[]) {
       perror("epoll_ctl for master_fd failed");
       exit(EXIT_FAILURE);
     }
+
+    client_enable_write_events(master_client);
   }
 
   // register the signal handler
   signal(SIGINT, sigint_handler);
-
-  if (strcmp(g_server_info.role, "slave") != 0) {
+  if (g_server_info.role == ROLE_SLAVE) {
     // for now only load file if it is not a replica
     rdb_load_data_from_file(db, g_server_config.dir, g_server_config.dbfilename);
   }
@@ -232,8 +232,6 @@ int start_server(int argc, char *argv[]) {
         int optval = 1;
         setsockopt(ConnectFD, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
-        event.events = EPOLLIN;
-        new_client->epoll_events = event.events;
         event.data.fd = ConnectFD;
         event.data.ptr = new_client;
 
@@ -241,13 +239,23 @@ int start_server(int argc, char *argv[]) {
           perror("epoll_ctl failed");
           exit(EXIT_FAILURE);
         }
-      } else if (events[i].events & EPOLLIN) {
-        process_client_input(client);
-      } else if (events[i].events & EPOLLOUT) {
-        if (client->type == CLIENT_TYPE_REPLICA) {
-          master_handle_replica_out(client);
-        } else if (client->type == CLIENT_TYPE_MASTER) {
-          replica_handle_master_data(client);
+        client_enable_read_events(new_client);
+      } else if (events[i].events & EPOLLIN | EPOLLOUT) {
+        if (events[i].events & EPOLLIN) {
+          if (client->type == CLIENT_TYPE_REGULAR) {
+            process_client_input(client);
+          } else if (client->type == CLIENT_TYPE_MASTER) {
+            replica_handle_master_data(client);
+          }
+        }
+        if (events[i].events & EPOLLOUT) {
+          if (client->type == CLIENT_TYPE_REPLICA) {
+            master_handle_replica_out(client);
+          } else if (client->type == CLIENT_TYPE_MASTER) {
+            replica_handle_master_data(client);
+          } else if (client->type == CLIENT_TYPE_REGULAR) {
+            flush_client_output(client);
+          }
         }
       } else if (events[i].events & EPOLLHUP | EPOLLERR) {
         handle_client_disconnection(client);
@@ -270,7 +278,7 @@ int start_server(int argc, char *argv[]) {
     printf("# DB saved on disk\n");
   }
   redis_db_destroy(db);
-  destroy_handler(handler);
+  destroy_handler(g_handler);
   printf("# redis_lite is now ready to exit, bye bye...\n");
   return EXIT_SUCCESS;
 }
