@@ -430,15 +430,23 @@ void handle_dbsize(CommandHandler *ch) {
 
 void handle_info(CommandHandler *ch) {
   Client *client = ch->client;
-  // only support the "role" key for now
   char info_output_buffer[INFO_BUFFER_SIZE];
   int current_offset = 0;
   current_offset += snprintf(info_output_buffer + current_offset,
                              sizeof(info_output_buffer) - current_offset, "# Replication\r\n");
 
-  current_offset +=
-      snprintf(info_output_buffer + current_offset, sizeof(info_output_buffer) - current_offset,
-               "role:%s\r\n", g_server_info.role);
+  const char *role_str;
+  switch (g_server_info.role) {
+  case ROLE_MASTER:
+    role_str = "master";
+    break;
+  case ROLE_SLAVE:
+    role_str = "slave";
+    break;
+  }
+
+  current_offset += snprintf(info_output_buffer + current_offset,
+                             sizeof(info_output_buffer) - current_offset, "role:%s\r\n", role_str);
 
   current_offset +=
       snprintf(info_output_buffer + current_offset, sizeof(info_output_buffer) - current_offset,
@@ -452,9 +460,10 @@ void handle_info(CommandHandler *ch) {
 
 void handle_replconf(CommandHandler *ch) {
   if (ch->arg_count >= 3 && strcmp(ch->args[1], "GETACK") == 0 && strcmp(ch->args[2], "*") == 0) {
-    char *reply[3] = {"REPLCONF", "ACK", "0"};
-    add_array_reply(ch->client, reply,
-                    3); // hard code for now
+    char offset_str[32];
+    snprintf(offset_str, 32, "%lld", g_server_info.master_repl_offset);
+    char *reply[3] = {"REPLCONF", "ACK", offset_str};
+    add_array_reply(ch->client, reply, 3);
     return;
   }
   add_simple_string_reply(ch->client, "OK");

@@ -11,8 +11,9 @@ typedef struct server_config {
   char master_port[6];
 } server_config_t;
 
+typedef enum { ROLE_MASTER, ROLE_SLAVE } server_role_t;
 typedef struct server_info {
-  char role[16];
+  server_role_t role;
   char master_replid[40];
   long long master_repl_offset;
 

@@ -29,7 +29,7 @@
 
 server_config_t g_server_config = {.dir = "/tmp/redis-data", .dbfilename = "dump.rdb"};
 
-server_info_t g_server_info = {.role = "master",
+server_info_t g_server_info = {.role = ROLE_MASTER,
                                .master_replid =
                                    "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", // hard code for now
                                .master_repl_offset = 0};
@@ -69,7 +69,7 @@ int start_server(int argc, char *argv[]) {
       }
     } else if (strcmp(argv[i], "--replicaof") == 0) {
       if (i + 2 < argc) {
-        strcpy(g_server_info.role, "slave");
+        g_server_info.role = ROLE_SLAVE;
         strcpy(g_server_config.master_host, argv[i + 1]);
         strcpy(g_server_config.master_port, argv[i + 2]);
         i += 2;
@@ -77,7 +77,7 @@ int start_server(int argc, char *argv[]) {
     }
   }
 
-  if (strcmp(g_server_info.role, "slave") == 0) {
+  if (g_server_info.role == ROLE_SLAVE) {
     int master_fd;
     char port_str[6];
 
@@ -145,8 +145,7 @@ int start_server(int argc, char *argv[]) {
 
   // register the signal handler
   signal(SIGINT, sigint_handler);
-
-  if (strcmp(g_server_info.role, "slave") != 0) {
+  if (g_server_info.role == ROLE_SLAVE) {
     // for now only load file if it is not a replica
     rdb_load_data_from_file(db, g_server_config.dir, g_server_config.dbfilename);
   }

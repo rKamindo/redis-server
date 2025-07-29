@@ -153,6 +153,11 @@ void process_client_input(Client *client) {
 
     size_t bytes_parsed = parser_parse(client->parser, begin, end) - begin;
 
+    if (g_server_info.role == ROLE_SLAVE && client->repl_client_state == REPL_STATE_READY) {
+      g_server_info.master_repl_offset += bytes_parsed;
+    }
+
+    // todo add support for a replica propogating to a replica
     if (client->should_propogate_command) {
       g_server_info.master_repl_offset += bytes_parsed;
 
@@ -160,7 +165,8 @@ void process_client_input(Client *client) {
       // char *repl_backlog_write_ptr;
       // size_t repl_backlog_writable_len;
 
-      // if (rb_writable(g_repl_backlog, &repl_backlog_write_ptr, &repl_backlog_writable_len) != 0)
+      // if (rb_writable(g_repl_backlog, &repl_backlog_write_ptr, &repl_backlog_writable_len) !=
+      // 0)
       // {
       //   perror("failed to get writable buffer");
       //   exit(EXIT_FAILURE);
@@ -168,9 +174,8 @@ void process_client_input(Client *client) {
 
       // if (repl_backlog_writable_len < bytes_parsed) {
       //   fprintf(stderr,
-      //           "Warning: Replication backlog buffer full. Cannot propagate command (size %zu, "
-      //           "available %zu).\n",
-      //           bytes_parsed, repl_backlog_writable_len);
+      //           "Warning: Replication backlog buffer full. Cannot propagate command (size %zu,
+      //           " "available %zu).\n", bytes_parsed, repl_backlog_writable_len);
       // } else {
       //   memcpy(repl_backlog_write_ptr, client->input_buffer, bytes_parsed);
       //   if (rb_write(g_repl_backlog, bytes_parsed) != 0) {
