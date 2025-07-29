@@ -195,12 +195,22 @@ void process_client_input(Client *client) {
                           &replica_output_writable_len) != 0) {
             fprintf(stderr, "failed to get writable buffer for replica %d's output buffer.\n",
                     replica_client->fd);
+            handle_client_disconnection(client);
+            continue;
             // consider disconnecting this replica
           }
 
           // only copy it if we can fit it
           if (bytes_parsed <= replica_output_writable_len) {
             memcpy(replica_output_write_buf, begin, bytes_parsed);
+          } else {
+            // we can't fit the bytes into the replica's output buffer, disconnect
+            fprintf(
+                stderr,
+                "can't fit bytes parsed into replica %d's output buffer, disconnecting replica\n",
+                client->fd);
+            handle_client_disconnection(client);
+            continue;
           }
 
           if (rb_write(replica_client->output_buffer, bytes_parsed) != 0) {
