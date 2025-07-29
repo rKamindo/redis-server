@@ -147,7 +147,6 @@ void remove_replica(Client *client) {
     fprintf(stderr, "remove_replica: replica not found in replicas");
   }
 
-  // swap replica pos with last replica then delete
   g_server_info.replicas[replica_pos] = g_server_info.replicas[num_replicas - 1];
   g_server_info.num_replicas--;
 }
