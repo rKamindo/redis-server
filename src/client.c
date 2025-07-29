@@ -197,7 +197,6 @@ void process_client_input(Client *client) {
                     replica_client->fd);
             handle_client_disconnection(client);
             continue;
-            // consider disconnecting this replica
           }
 
           // only copy it if we can fit it
