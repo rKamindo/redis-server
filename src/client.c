@@ -60,15 +60,16 @@ void destroy_client(Client *client) {
   free(client);
 }
 
-void flush_client_output(Client *client) {
+size_t flush_client_output(Client *client) {
   char *output_buf;
   size_t readable_len;
 
+  size_t total_bytes_sent = 0;
   // get the readable portion of the ring buffer
   while (1) {
     if (rb_readable(client->output_buffer, &output_buf, &readable_len) != 0) {
       fprintf(stderr, "Failed to get readable buffer\n");
-      return;
+      return -1;
     }
 
     if (readable_len == 0) {
@@ -86,15 +87,20 @@ void flush_client_output(Client *client) {
         break;
       } else {
         perror("Failed to send data to client");
-        return; // Handle error appropriately
+        return -1; // Handle error appropriately
       }
     } else if (bytes_sent == 0) {
       // No bytes sent; this may indicate that the socket is not ready.
       break; // Exit if nothing was sent
     }
 
-    rb_read(client->output_buffer, bytes_sent);
+    if (rb_read(client->output_buffer, bytes_sent) != 0) {
+      fprintf(stderr, "failed to update read index for client output buffer\n");
+    }
+
+    total_bytes_sent += bytes_sent;
   }
+  return total_bytes_sent;
 }
 
 void process_client_input(Client *client) {
@@ -153,35 +159,48 @@ void process_client_input(Client *client) {
 
     size_t bytes_parsed = parser_parse(client->parser, begin, end) - begin;
 
-    if (g_server_info.role == ROLE_SLAVE && client->repl_client_state == REPL_STATE_READY) {
-      g_server_info.master_repl_offset += bytes_parsed;
+    if (g_server_info.role == ROLE_SLAVE && client->type == CLIENT_TYPE_MASTER &&
+        client->type == REPL_STATE_READY) {
+      // client is a master and it is either doing a partial sync or propogating commands
+      g_server_info.master_repl_offset += bytes_parsed; // the replica advances its offset
     }
 
     // todo add support for a replica propogating to a replica
     if (client->should_propogate_command) {
-      g_server_info.master_repl_offset += bytes_parsed;
+      // this is a write command, propogate it
+      g_server_info.master_repl_offset += bytes_parsed; // advance the masters offset
+      ring_buffer repl_backlog = g_server_info.repl_backlog;
+      char *repl_backlog_write_buf;
+      size_t repl_backlog_writable_len;
 
-      // // copy the bytes parsed into the repl_backlog buffer
-      // char *repl_backlog_write_ptr;
-      // size_t repl_backlog_writable_len;
+      if (rb_writable(g_server_info.repl_backlog, &repl_backlog_write_buf,
+                      &repl_backlog_writable_len) != 0) {
+        perror("failed to get writable buffer");
+      }
 
-      // if (rb_writable(g_repl_backlog, &repl_backlog_write_ptr, &repl_backlog_writable_len) !=
-      // 0)
-      // {
-      //   perror("failed to get writable buffer");
-      //   exit(EXIT_FAILURE);
-      // }
+      if (bytes_parsed <= repl_backlog_writable_len) {
+        // can copy bytes into repl backlog without overwriting
+        memcpy(repl_backlog_write_buf, client->input_buffer, bytes_parsed);
+        if (rb_write(repl_backlog, bytes_parsed) != 0) {
+          fprintf(stderr, "failed to update write index for replication backlog");
+        }
+      } else {
+        // we have to overwrite some bytes, advance the read pointer that many bytes
+        // then write the bytes parsed
+        size_t bytes_to_overwrite = bytes_parsed - repl_backlog_writable_len;
+        if (rb_read(repl_backlog, bytes_to_overwrite) != 0) {
+          fprintf(stderr, "failed to update read index for replication backlog by %ld bytes",
+                  bytes_to_overwrite);
+        }
+        g_server_info.repl_backlog_base_offset += bytes_to_overwrite;
 
-      // if (repl_backlog_writable_len < bytes_parsed) {
-      //   fprintf(stderr,
-      //           "Warning: Replication backlog buffer full. Cannot propagate command (size %zu,
-      //           " "available %zu).\n", bytes_parsed, repl_backlog_writable_len);
-      // } else {
-      //   memcpy(repl_backlog_write_ptr, client->input_buffer, bytes_parsed);
-      //   if (rb_write(g_repl_backlog, bytes_parsed) != 0) {
-      //     perror("failed to update write index for replication backlog");
-      //     exit(EXIT_FAILURE);
-      //   }
+        memcpy(repl_backlog_write_buf, client->input_buffer, bytes_parsed);
+
+        if (rb_write(repl_backlog, bytes_parsed) != 0) {
+          fprintf(stderr, "failed to update write index for replication backlog");
+          exit(EXIT_FAILURE);
+        }
+      }
 
       // for each replica, copy to the replica's output buffer
       // and enable epoll to monitor for EPOLLOUT

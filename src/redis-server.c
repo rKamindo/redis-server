@@ -26,13 +26,15 @@
 #define DEFAULT_PORT 6379
 #define MAX_EVENTS 10000
 #define MAX_PATH_LENGTH 256
+#define REPL_BACKLOG_SIZE 1048576
 
 server_config_t g_server_config = {.dir = "/tmp/redis-data", .dbfilename = "dump.rdb"};
 
 server_info_t g_server_info = {.role = ROLE_MASTER,
                                .master_replid =
                                    "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", // hard code for now
-                               .master_repl_offset = 0};
+                               .master_repl_offset = 0,
+                               .repl_backlog_base_offset = 0};
 
 int g_epoll_fd; // epollfd global
 int port = DEFAULT_PORT;
@@ -42,6 +44,11 @@ void sigint_handler(int sig) { stop_server = 1; }
 
 int start_server(int argc, char *argv[]) {
   g_handler = create_handler();
+  // create replication backlog
+  if (rb_create(REPL_BACKLOG_SIZE, &g_server_info.repl_backlog) != 0) {
+    fprintf(stderr, "creating repl_backlog ring buffer failed\n");
+  }
+
   redis_db_t *db = redis_db_create();
   g_epoll_fd = epoll_create(1);
   if (g_epoll_fd == -1) {
@@ -279,6 +286,8 @@ int start_server(int argc, char *argv[]) {
   }
   redis_db_destroy(db);
   destroy_handler(g_handler);
+  // TODO destroy repl backlog
+  rb_destroy(g_server_info.repl_backlog);
   printf("# redis_lite is now ready to exit, bye bye...\n");
   return EXIT_SUCCESS;
 }

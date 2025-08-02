@@ -30,6 +30,20 @@ int parse_integer(const char *str, long *result) {
   return ERR_NONE;
 }
 
+int parse_long_long(const char *str, long long *result) {
+  char *endptr;
+  errno = 0;
+  long value = strtol(str, &endptr, 10);
+
+  // check if the conversion was successful and if the value is within range
+  if (endptr == str || *endptr != '\0' || errno == ERANGE) {
+    return ERR_VALUE; // return error code for non-integer or out of range
+  }
+
+  *result = value;
+  return ERR_NONE;
+}
+
 char *construct_file_path(const char *dir, const char *filename) {
   size_t path_len = strlen(dir) + strlen(filename) + 2;
   char *path = malloc(path_len);

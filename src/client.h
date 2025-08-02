@@ -27,7 +27,11 @@ typedef enum {
   REPL_STATE_ERROR
 } ReplicaClientState;
 
-typedef enum { MASTER_REPL_STATE_SENDING_RDB_DATA, MASTER_REPL_STATE_PROPOGATE } MasterReplicaState;
+typedef enum {
+  MASTER_REPL_STATE_PSYNC,
+  MASTER_REPL_STATE_SENDING_RDB_DATA,
+  MASTER_REPL_STATE_PROPAGATE
+} MasterReplicaState;
 
 typedef struct Client {
   int fd;
@@ -44,6 +48,7 @@ typedef struct Client {
   int rdb_fd; // pointer of rdb file being sent,
   off_t rdb_file_offset;
   off_t rdb_file_size;
+  long long repl_offset; // from the master's perspective, a replica's offset
 
   // replica specific fields
   ReplicaClientState repl_client_state;
@@ -60,7 +65,7 @@ typedef struct Client {
 
 Client *create_client(int fd);
 void select_client_db(Client *client, redis_db_t *db);
-void flush_client_output(Client *client);
+size_t flush_client_output(Client *client);
 void destroy_client(Client *client);
 void process_client_input(Client *client);
 void handle_client_disconnection(Client *client);

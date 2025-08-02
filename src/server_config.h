@@ -1,5 +1,6 @@
 #ifndef SERVER_CONFIG_H
 #define SERVER_CONFIG_H
+#include "ring_buffer.h"
 
 #define MAX_REPLICAS 16
 
@@ -16,7 +17,8 @@ typedef struct server_info {
   server_role_t role;
   char master_replid[40];
   long long master_repl_offset;
-
+  ring_buffer repl_backlog;
+  long long repl_backlog_base_offset;
   // fields for replica management
   Client *replicas[MAX_REPLICAS];
   size_t num_replicas;
