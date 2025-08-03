@@ -1,6 +1,13 @@
 # Redis Server in C
 
-This ongoing project is a lightweight Redis compatible server implementation in C, created as part of the [Coding Challenges](https://codingchallenges.fyi/challenges/challenge-redis) project.
+This is a high-performance in-memory data store like Redis, that is compatible with Redis's RESP protocol. I've created it as part of the [Coding Challenges](https://codingchallenges.fyi/challenges/challenge-redis) project.
+
+## What I'm currently working on
+- Replication
+
+## To Do
+- Active Expiration
+- Sorted Sets
 
 ## Latest benchmark results
 ![image](https://github.com/user-attachments/assets/fc269633-df65-4440-a3f3-7e1abd69aacb)
@@ -9,10 +16,9 @@ This ongoing project is a lightweight Redis compatible server implementation in 
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
-- Support for the following Redis commands (PING, ECHO, SET (with options), GET, EXIST, DELETE, INCR, DECR, LPUSH, RPUSH, SAVE)
-- Load database from disk on startup
-- GoogleTest for testing (unit tests and integration tests)
-- CMake for building
+- Support for the following Redis commands (PING, ECHO, SET (with options), GET, EXIST, DELETE, INCR, DECR, LPUSH, LRANGE, RPUSH, SAVE)
+- Persistence 
+- Replication
 
 ## Technical Implementation 
 - epoll-based I/O multiplexing
