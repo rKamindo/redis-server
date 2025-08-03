@@ -2,17 +2,9 @@
 
 This is a high-performance in-memory data store like Redis, that is compatible with Redis's RESP protocol. I've created it as part of the [Coding Challenges](https://codingchallenges.fyi/challenges/challenge-redis) project.
 
-## What I'm currently working on
-- Replication
-
-## To Do
-- Active Expiration
-- Sorted Sets
-
 ## Latest benchmark results
 ![image](https://github.com/user-attachments/assets/fc269633-df65-4440-a3f3-7e1abd69aacb)
 ![image](https://github.com/user-attachments/assets/ca8177ca-0559-4318-8136-693a8af28ef9)
-
 
 ## Features
 - RESP (REdis Serialization Protocol) implementation
@@ -20,10 +12,16 @@ This is a high-performance in-memory data store like Redis, that is compatible w
 - Persistence 
 - Replication
 
+
+## What I'm currently working on
+- Replication
+
+
 ## Technical Implementation 
 - epoll-based I/O multiplexing
 - Ring buffers (input and output) for each client
 - Zero allocation byte parsing for RESP protocol
+- Asynchronous replication supporting partial resynchronization using a backlog
 
 ## System Requirements
 - Linux operating system (or other Unix-like systems)
