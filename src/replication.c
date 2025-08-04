@@ -222,9 +222,8 @@ void replica_receive_rdb_snapshot(Client *client) {
     char *read_buf;
     size_t writable_len;
     size_t readable_len;
-
-    // if we haven't finished receiving all the messages
     if (client->rdb_received_bytes < client->rdb_expected_bytes) {
+      // we haven't received the expected number of bytes yet
       // get the writable portion of the ring buffer
       if (rb_writable(client->input_buffer, &write_buf, &writable_len) != 0) {
         fprintf(stderr, "failed to get writable buffer\n");
