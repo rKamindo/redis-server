@@ -216,8 +216,7 @@ void replica_receive_rdb_snapshot(Client *client) {
   }
 
   // continusly read from socket into ring buffer
-  // and drain the ring buffer into the file. This loop will block
-  // when no data is available from the socket, or if the ring buffer is full
+  // and drain the ring buffer into the file.
   while (1) {
     char *write_buf;
     char *read_buf;
