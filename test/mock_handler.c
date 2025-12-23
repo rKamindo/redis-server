@@ -42,21 +42,6 @@ void destroy_mock_handler(Handler *handler) { free(handler); }
 
 CommandHandler *create_mock_command_handler() {
   CommandHandler *mock_ch = malloc(sizeof(CommandHandler));
-  if (!mock_ch) {
-    perror("Failed to allocate CommandHandler");
-    exit(EXIT_FAILURE);
-  }
-  mock_ch->buf = NULL;
-  mock_ch->buf_size = 0;
-  mock_ch->buf_used = 0;
-  mock_ch->args = NULL;
-  mock_ch->arg_capacity = 0;
-  mock_ch->arg_count = 0;
-  mock_ch->ends = NULL;
-  mock_ch->ends_size = 0;
-  mock_ch->ends_capacity = 0;
-  mock_ch->client = NULL;
-  mock_ch->should_respond = false;
   return mock_ch;
 }
 void destroy_mock_command_handler(CommandHandler *mock_ch) { free(mock_ch); }

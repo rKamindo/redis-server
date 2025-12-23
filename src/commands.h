@@ -33,9 +33,6 @@ void handle_psync(CommandHandler *ch);
 
 void handle_simple_string_reply(CommandHandler *ch);
 
-/* replication reply helpers */
-void add_fullresync_reply(Client *client, char *master_replid, long long master_repl_offset);
-
 void send_ping_command(Client *client);
 
 // send replication handshake specific commands
