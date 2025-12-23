@@ -201,7 +201,8 @@ void pop_state(Parser *parser) {
 const char *parser_parse(Parser *parser, const char *begin, const char *end) {
   bool keep_going = true;
   while (keep_going) {
-    if (parser->command_handler->client->type == CLIENT_TYPE_MASTER &&
+    if (parser->command_handler && parser->command_handler->client &&
+        parser->command_handler->client->type == CLIENT_TYPE_MASTER &&
         parser->command_handler->client->repl_client_state ==
             REPL_STATE_RECEIVED_FULLRESYNC_RESPONSE) {
       // we are expecting the $<file_size>\r\n header before the rdb file contents

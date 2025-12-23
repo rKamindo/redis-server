@@ -21,6 +21,7 @@ set(TEST_EXECUTABLES
     dictionary_test
     command_test
     linked_list_test
+    replication_test
 )
 
 function(add_gtest_executable name)
@@ -35,6 +36,7 @@ add_gtest_executable(ring_buffer_test ${CMAKE_SOURCE_DIR}/src/ring_buffer.c)
 add_gtest_executable(dictionary_test ${COMMON_SOURCES})
 add_gtest_executable(command_test ${COMMON_SOURCES})
 add_gtest_executable(linked_list_test ${CMAKE_SOURCE_DIR}/src/linked_list.c)
+add_gtest_executable(replication_test ${COMMON_SOURCES})
 
 
 

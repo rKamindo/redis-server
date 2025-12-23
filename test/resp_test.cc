@@ -128,3 +128,30 @@ TEST_F(ParseTest, InlineCommand_Echo_SingleWordArgument) {
   ASSERT_EQ(end, input + strlen(input));
   ASSERT_EQ(parser.stack_top, 0);
 }
+
+TEST_F(ParseTest, NullCommandHandlerDoesNotCrash) {
+  // parser should handle NULL command handler without crashing
+  parser.command_handler = NULL;
+  const char *input = "+hello\r\n";
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+  ASSERT_EQ(end, input + strlen(input));
+  ASSERT_EQ(parser.stack_top, 0);
+}
+
+TEST_F(ParseTest, MasterWithFullResyncStateDoesNotConsumeBytes) {
+  // when master has received fullresync response, parser should not consume bytes
+  CommandHandler *ch = create_mock_command_handler();
+  Client *client = (Client *)malloc(sizeof(Client));
+  memset(client, 0, sizeof(Client));
+  client->type = CLIENT_TYPE_MASTER;
+  client->repl_client_state = REPL_STATE_RECEIVED_FULLRESYNC_RESPONSE;
+  ch->client = client;
+
+  parser.command_handler = ch;
+  const char *input = "+hello\r\n";
+  const char *end = parser_parse(&parser, input, input + strlen(input));
+  // parser should return begin (no bytes consumed)
+  ASSERT_EQ(end, input);
+  free(client);
+  free(ch);
+}
