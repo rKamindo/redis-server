@@ -62,7 +62,7 @@ void add_integer_reply(Client *client, int integer) {
   write_end_integer(client->output_buffer);
 }
 
-void add_psync_reply(Client *client, char *master_replid, long long master_repl_offset) {
+void add_fullresync_reply(Client *client, char *master_replid, long long master_repl_offset) {
   printf("add_psync_reply called with master_replid: %s, master_repl_offset: %lld\n", master_replid,
          master_repl_offset);
   fflush(stdout);
@@ -514,10 +514,39 @@ void handle_simple_string_reply(CommandHandler *ch) {
 
 void handle_psync(CommandHandler *ch) {
   Client *client = ch->client;
+
+  // Expect PSYNC <replid> <offset>
+  if (ch->arg_count < 3) {
+    add_error_reply(client, "ERR wrong number of arguments for 'psync' command");
+    return;
+  }
+
+  char *replid = ch->args[1];
+  char *offset_str = ch->args[2];
+  char *endptr = NULL;
+  long long replica_offset = strtoll(offset_str, &endptr, 10);
+
+  // If the replica provided a known master id and a valid numeric offset that falls
+  // inside the backlog window, do a partial resync
+  if (replid != NULL && replid[0] != '?' && strcmp(replid, g_server_info.master_replid) == 0 &&
+      endptr != NULL && *endptr == '\0' &&
+      replica_offset >= g_server_info.repl_backlog_base_offset &&
+      replica_offset <= g_server_info.master_repl_offset) {
+    printf("Performing partial resync for replica %d from offset %lld\n", client->fd,
+           replica_offset);
+    add_replica(client);
+    add_simple_string_reply(client, "CONTINUE");
+    client->repl_offset = replica_offset;
+    client->master_repl_state = MASTER_REPL_STATE_PSYNC;
+    client_enable_write_events(client);
+    return;
+  }
+
+  // otherwise perform a full resync
+  printf("Performing full resync for replica %d\n", client->fd);
   add_replica(client);
-  add_psync_reply(client, g_server_info.master_replid, g_server_info.master_repl_offset);
-  // send $<length_of_file>\r\n<file_content>
-  // call save
+  add_fullresync_reply(client, g_server_info.master_replid, g_server_info.master_repl_offset);
+  // call save and send the RDB file
   redis_db_save(client->db);
 
   char *db_file_path = construct_file_path(g_server_config.dir, g_server_config.dbfilename);
